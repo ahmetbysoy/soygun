@@ -1,0 +1,6 @@
+{
+  "name": "Soygun Çarkı",
+  "description": "4 Kişilik Kumarhane Masası, crypto temalı çark ve bahis oyunu.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
