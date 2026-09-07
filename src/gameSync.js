@@ -9,7 +9,7 @@ import { BotBrain } from './core/botBrain.js'
 import { authoritativeClient } from './core/authoritativeClient.js'
 import { MathEngine } from './core/MathEngine.js'
 
-const botBrains = [new BotBrain('risk'), new BotBrain('safe'), new BotBrain('chaos'), new BotBrain('risk')]
+const botBrains = [new BotBrain('risk'), new BotBrain('safe'), new BotBrain('chaos'), new BotBrain('chaser')]
 
 export const N_SEATS = 4
 export const BET_S = 15
@@ -33,7 +33,7 @@ export const BOT_FALLBACK = [
   { name: 'VEGA', ava: '🥷', style: 'risk' },
   { name: 'KURT', ava: '🐺', style: 'safe' },
   { name: 'TİLKİ', ava: '🦊', style: 'chaos' },
-  { name: 'ZEHRA', ava: '🦂', style: 'risk' },
+  { name: 'ZEHRA', ava: '🦂', style: 'chaser' },
 ]
 
 export function seatInfo(i, seats) {
@@ -92,18 +92,32 @@ export function clearMyBets(seat) {
 
 // ── SADECE HOST çağırır: bot bahsi enjekte et ──
 export function injectBotBets(game, seats) {
+  const timeLeftMs = Math.max(0, (game.phaseUntil || 0) - now())
+
   for (let i = 0; i < N_SEATS; i++) {
     if (seats[i]) continue                       // gerçek oyuncu → bot değil
     if (game.out?.[i]) continue
-    if (Math.random() >= .35) continue            // her tick'te değil, doğal hissettir
+
     const brain = botBrains[i]
+
+    // Chaser/Sniper bot son 3 saniyede %80 oranında baskı kurar
+    const isSniperTime = brain.style === 'chaser' && timeLeftMs <= 3200
+    if (!isSniperTime && Math.random() >= 0.35) continue
+
     const spent = Object.values(game.bets?.[i] || {}).reduce((a, x) => a + x, 0)
     const bankroll = (game.chips?.[i] ?? 0) - spent
     if (bankroll < 10) continue
-    const cls = brain.pickClass(SEG)
-    const segIdx = brain.pickSegment(SEG, cls)
-    const amt = Math.min(brain.betSize(bankroll), bankroll)
-    placeBet(i, segIdx, amt)
+
+    const segIdx = brain.pickTargetSegment(SEG, game.history || [], timeLeftMs)
+    const amt = Math.min(brain.calcDynamicBetSize(bankroll, SEG[segIdx], timeLeftMs, game.history || []), bankroll)
+
+    if (amt > 0) {
+      placeBet(i, segIdx, amt)
+      // Sniper son saniye taunt'u
+      if (isSniperTime && Math.random() < 0.4) {
+        log(brain.getRandomTaunt('snipe'), 'y')
+      }
+    }
   }
 }
 
@@ -241,12 +255,25 @@ async function settlePhase(game, pool, seats = {}) {
           return u
         }).catch(() => {})
       }
+    } else {
+      // 🤖 Bot Zekası Sonuç Kaydı & Tilt / Galibiyet Tepkisi
+      const brain = botBrains[i]
+      if (brain) {
+        const betAmt = seatTotalBet(i)
+        const winAmt = seatWins[i] || 0
+        const won = winAmt > betAmt
+        const taunt = brain.recordRoundResult(won, winAmt, Math.max(0, betAmt - winAmt))
+        if (taunt && (brain.isTilt || Math.random() < 0.35)) {
+          log(taunt, brain.isTilt ? 'r' : 'g')
+        }
+      }
     }
   }
 
   for (let i = 0; i < N_SEATS; i++) if ((chips[i] || 0) <= 0) { chips[i] = 0; out[i] = true }
   const alive = [0, 1, 2, 3].filter(i => !out[i])
-  const patch = { chips, out, phase: 'result', phaseUntil: now() + RESULT_MS, lastMult: effMult }
+  const updatedHistory = [{ round: game.round || 1, seg: { l: seg.l, t: seg.t }, idx }, ...(game.history || [])].slice(0, 10)
+  const patch = { chips, out, phase: 'result', phaseUntil: now() + RESULT_MS, lastMult: effMult, history: updatedHistory }
   if (alive.length === 1) patch.winnerSeat = alive[0]
   await update(gRef(), patch)
   if (poolDelta) adjPool(Math.round(poolDelta))

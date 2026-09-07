@@ -5,9 +5,15 @@ import {
   onDisconnect, runTransaction, identity,
 } from './firebase.js'
 import { useEcon, getUserLoyalty, claimDailyStreak, claimRakeback } from './economy.js'
+import { useGame } from './gameSync.js'
 import { walletManager } from './wallet.js'
 import ShopModal from './components/ShopModal.jsx'
 import LoyaltyModal from './components/LoyaltyModal.jsx'
+import FinancialMetricsModal from './components/FinancialMetricsModal.jsx'
+import WhaleNotificationToast from './components/WhaleNotificationToast.jsx'
+import SunkCostModal from './components/SunkCostModal.jsx'
+import ResurrectionModal from './components/ResurrectionModal.jsx'
+import { uxManager } from './core/UXManager.js'
 
 const BUY_IN = 20         // chip — buy-in koltuk bedeli
 const START_BAL = 100     // başlangıç chip
@@ -27,8 +33,12 @@ export default function App() {
   const [connecting, setConnecting] = useState(false)
   const [isShopOpen, setIsShopOpen] = useState(false)
   const [isLoyaltyOpen, setIsLoyaltyOpen] = useState(false)
+  const [isMetricsOpen, setIsMetricsOpen] = useState(false)
   const [loyaltyData, setLoyaltyData] = useState(null)
+  const [sunkCostWarning, setSunkCostWarning] = useState(null)
+  const [resurrectionOffer, setResurrectionOffer] = useState(null)
   const econ = useEcon()
+  const game = useGame()
 
   const refreshLoyalty = async () => {
     if (me?.uid) {
@@ -155,6 +165,40 @@ export default function App() {
     setMySeat(-1); setScreen('lobby')
   }
 
+  function handleAttemptLeave() {
+    if (mySeat >= 0) {
+      const warn = uxManager.getSunkCostWarning(bal, econ?.prize_pool, loyaltyData?.streak?.count)
+      setSunkCostWarning(warn)
+    } else {
+      leave()
+    }
+  }
+
+  // 💀 Elenme durumunda anında masaya geri dönüş (Resurrection Buy-in Upsell)
+  useEffect(() => {
+    if (mySeat >= 0) {
+      const un = onValue(ref(db, `${ROOT}/table/game`), s => {
+        const g = s.val()
+        if (g && g.out?.[mySeat] && (g.chips?.[mySeat] ?? 0) <= 0) {
+          if (!resurrectionOffer) {
+            setResurrectionOffer(uxManager.getResurrectionOffer(mySeat, g.round))
+          }
+        }
+      })
+      return () => un()
+    }
+  }, [mySeat, resurrectionOffer])
+
+  const handleRevive = async (chipsToAdd) => {
+    if (mySeat >= 0) {
+      await update(ref(db, `${ROOT}/table/game/chips`), { [mySeat]: chipsToAdd })
+      await update(ref(db, `${ROOT}/table/game/out`), { [mySeat]: false })
+      await runTransaction(ref(db, `${ROOT}/users/${me.uid}/balance`), c => (c || 0) + chipsToAdd)
+      setResurrectionOffer(null)
+      pushFeed(`⚡ ${me.name} Can Suyu paketiyle masaya geri döndü! (+${chipsToAdd} Çip)`)
+    }
+  }
+
   function like(i) {
     runTransaction(ref(db, `${ROOT}/table/likes/${i}`), c => (c || 0) + 1)
     burst(i)
@@ -175,6 +219,9 @@ export default function App() {
 
   return (
     <div className="app">
+      {/* 💸 Canlı Balina Çekim ve Büyük Vurgun FOMO Bildirimleri */}
+      <WhaleNotificationToast />
+
       <header>
         <h1>🥷 SOYGUN ÇARKI</h1>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -208,6 +255,13 @@ export default function App() {
           onClick={() => setIsLoyaltyOpen(true)}
         >
           🎁 VIP & Ganimet ({loyaltyData?.accumulatedRakeback || 0})
+        </button>
+        <button
+          className="btn ghost sm"
+          style={{ borderColor: '#4582d3', color: '#6db1ff' }}
+          onClick={() => setIsMetricsOpen(true)}
+        >
+          📊 RTP & Finans (%97.1)
         </button>
       </div>
 
@@ -317,9 +371,31 @@ export default function App() {
               ))}
             </div>
           )}
-          <button className="btn ghost" onClick={leave}>← Lobiden Ayrıl</button>
+          <button className="btn ghost" onClick={handleAttemptLeave}>← Lobiden Ayrıl</button>
         </div>
       )}
+
+      {/* Sunk-Cost Fallacy Masadan Çıkışı Engelleme Modalı */}
+      <SunkCostModal
+        isOpen={Boolean(sunkCostWarning)}
+        warningData={sunkCostWarning}
+        onCancel={() => setSunkCostWarning(null)}
+        onConfirmLeave={() => {
+          setSunkCostWarning(null)
+          leave()
+        }}
+      />
+
+      {/* Elenme Sonrası Can Suyu (Buy-in Upsell) Modalı */}
+      <ResurrectionModal
+        isOpen={Boolean(resurrectionOffer)}
+        offerData={resurrectionOffer}
+        onRevive={handleRevive}
+        onDecline={() => {
+          setResurrectionOffer(null)
+          leave()
+        }}
+      />
 
       {/* Kara Borsa Çip Kasası Modalı */}
       <ShopModal
@@ -339,6 +415,16 @@ export default function App() {
         onClaimed={() => {
           refreshLoyalty()
         }}
+      />
+
+      {/* GLI-19 Canlı Finans & RTP Metrik Modalı */}
+      <FinancialMetricsModal
+        isOpen={isMetricsOpen}
+        onClose={() => setIsMetricsOpen(false)}
+        econ={econ}
+        game={game}
+        userBal={bal}
+        totalWagered={loyaltyData?.totalWagered || 0}
       />
     </div>
   )

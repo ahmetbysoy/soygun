@@ -11,6 +11,8 @@ import {
 import { rngEngine } from './core/RNGEngine.js'
 import { authoritativeClient } from './core/authoritativeClient.js'
 import { VisualFX } from './core/VisualFX.js'
+import { securityEngine } from './core/SecurityEngine.js'
+import ProvablyFairModal from './components/ProvablyFairModal.jsx'
 
 const N = SEG.length
 const SEG_ANGLE = 360 / N // 30 derece
@@ -26,7 +28,9 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
   const [activeWinSeg, setActiveWinSeg] = useState(null)
   const [pointerFlick, setPointerFlick] = useState(false)
   const [spinStatusText, setSpinStatusText] = useState('')
+  const [nearMissAlert, setNearMissAlert] = useState('')
   const [provablyProof, setProvablyProof] = useState(null)
+  const [isProvablyModalOpen, setIsProvablyModalOpen] = useState(false)
 
   const rotationRef = useRef(0)
   const lastSpunKeyRef = useRef('')
@@ -90,7 +94,33 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
 
   // Saf GPU-hızlandırmalı akıcı çark dönüş fonksiyonu
   const executeWheelSpin = useCallback((targetSegIndex, onComplete) => {
-    const targetAngleMod = (360 - (targetSegIndex * SEG_ANGLE + SEG_ANGLE / 2)) % 360
+    // 😱 Near-Miss Algoritması:
+    // Eğer kazanan dilim büyük çarpan dilimlerine (x11.64 veya x5.82) komşuysa,
+    // duruş açısını dilimin tam sınırına (1-2 derece kala) denk getiriyoruz.
+    // Bu, oyuncunun beyninde "kıl payı kaçtı" dopamin patlamasını tetikler.
+    let microOffset = 0
+    let isNearMiss = false
+    let nearMissNotice = ''
+
+    if (targetSegIndex === 5) {
+      microOffset = (SEG_ANGLE / 2) - 3.2
+      isNearMiss = true
+      nearMissNotice = '😱 KIL PAYI KAÇTI! x11.64 sınırından 1 milimle döndü!'
+    } else if (targetSegIndex === 7) {
+      microOffset = -(SEG_ANGLE / 2) + 3.2
+      isNearMiss = true
+      nearMissNotice = '😱 KIL PAYI KAÇTI! x11.64 sınırından 1 milimle döndü!'
+    } else if (targetSegIndex === 1) {
+      microOffset = (SEG_ANGLE / 2) - 3.2
+      isNearMiss = true
+      nearMissNotice = '😱 ÇOK YAKINDI! x5.82 diliminin kenarında durdu!'
+    } else if (targetSegIndex === 3) {
+      microOffset = -(SEG_ANGLE / 2) + 3.2
+      isNearMiss = true
+      nearMissNotice = '😱 ÇOK YAKINDI! x5.82 diliminin kenarında durdu!'
+    }
+
+    const targetAngleMod = (360 - (targetSegIndex * SEG_ANGLE + SEG_ANGLE / 2 + microOffset)) % 360
     const currentMod = ((rotationRef.current % 360) + 360) % 360
     let diff = targetAngleMod - currentMod
     if (diff <= 0) diff += 360
@@ -116,6 +146,12 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
 
       // Çark durduğunda kilitlenme 'clack' sesi
       clackSound()
+
+      // Near-Miss dopamin uyarısı
+      if (isNearMiss) {
+        setNearMissAlert(nearMissNotice)
+        setTimeout(() => setNearMissAlert(''), 4000)
+      }
 
       // Sonuç bildirim ve ses/haptik efektleri
       const landedSeg = SEG[targetSegIndex]
@@ -160,12 +196,9 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
     }
   }, [game?.phase, game?.segResult, game?.phaseUntil, game?.round, executeWheelSpin])
 
-  // BAHİS VE ANINDA ÇEVİRME MOTORU
+  // BAHİS VE ANINDA ÇEVİRME MOTORU (Atomik Kilitli & Hızlı Tıklama Korumalı)
   const handlePlaceBet = async (segIdx, autoSpin = false) => {
     if (isSpinning) return
-
-    haptic('bet')
-    tick()
 
     // Koltuk kontrolü
     let currentSeat = seat
@@ -180,21 +213,70 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
       if (currentSeat < 0) currentSeat = 0
     }
 
-    // Yetersiz bakiye kontrolü
-    const currentChips = (game?.chips?.[currentSeat]) ?? 0
-    if (currentChips < chip) {
-      log(`⚠️ Yetersiz çip! Mevcut: ${currentChips}, Gerekli: ${chip}`, 'r')
-      haptic('bomb')
+    // Rate limit kontrolü (Maksimum saniyede 5 hamle)
+    if (!securityEngine.checkRateLimit(currentSeat, 'bet', 5)) {
       return
     }
 
-    // Bahsi masaya koy
-    if (currentSeat >= 0 && segIdx != null) {
-      await placeBet(currentSeat, segIdx, chip)
+    // Atomik Kilit: Çift çekim ve race condition engeli
+    const lockKey = `bet_action_${currentSeat}`
+    if (!securityEngine.acquireLock(lockKey)) {
+      return
     }
 
-    // Eğer anında çevrilmek istendiyse, yetkili çekilişi alıp senkron spin fazını başlat
-    if (autoSpin) {
+    try {
+      haptic('bet')
+      tick()
+
+      // Yetersiz bakiye kontrolü
+      const currentChips = (game?.chips?.[currentSeat]) ?? 0
+      if (currentChips < chip) {
+        log(`⚠️ Yetersiz çip! Mevcut: ${currentChips}, Gerekli: ${chip}`, 'r')
+        haptic('bomb')
+        return
+      }
+
+      // Bahsi masaya koy
+      if (currentSeat >= 0 && segIdx != null) {
+        await placeBet(currentSeat, segIdx, chip)
+      }
+
+      // Eğer anında çevrilmek istendiyse, yetkili çekilişi alıp senkron spin fazını başlat
+      if (autoSpin) {
+        const spinData = await authoritativeClient.requestSpin(N)
+        const randomWinningSeg = spinData.winningSeg
+        const proofData = {
+          hash: spinData.serverSeedHash || spinData.rawHex || '',
+          clientSeed: spinData.clientSeed,
+          nonce: spinData.nonce,
+          authoritative: spinData.isServerAuthoritative,
+        }
+        setProvablyProof(proofData)
+
+        if (segIdx != null) {
+          log(`🎲 Koltuk ${currentSeat + 1}: ${SEG[segIdx].l} dilimine ${chip} chip bahis bastı ve çarkı çevirdi!`, 'y')
+        }
+
+        await triggerSpinWithBet(currentSeat, segIdx, 0, randomWinningSeg, {
+          serverSeedHash: proofData.hash,
+          clientSeed: proofData.clientSeed,
+          nonce: proofData.nonce,
+          rawHex: spinData.rawHex,
+          authoritative: spinData.isServerAuthoritative,
+        })
+      }
+    } finally {
+      securityEngine.releaseLock(lockKey)
+    }
+  }
+
+  // Masadaki mevcut bahislerle çarkı anında çevirme
+  const handleSpinNow = async () => {
+    if (isSpinning) return
+    const lockKey = `spin_action_${seat}`
+    if (!securityEngine.acquireLock(lockKey)) return
+
+    try {
       const spinData = await authoritativeClient.requestSpin(N)
       const randomWinningSeg = spinData.winningSeg
       const proofData = {
@@ -205,40 +287,16 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
       }
       setProvablyProof(proofData)
 
-      if (segIdx != null) {
-        log(`🎲 Koltuk ${currentSeat + 1}: ${SEG[segIdx].l} dilimine ${chip} chip bahis bastı ve çarkı çevirdi!`, 'y')
-      }
-
-      await triggerSpinWithBet(currentSeat, segIdx, 0, randomWinningSeg, {
+      await triggerSpinWithBet(seat, null, 0, randomWinningSeg, {
         serverSeedHash: proofData.hash,
         clientSeed: proofData.clientSeed,
         nonce: proofData.nonce,
         rawHex: spinData.rawHex,
         authoritative: spinData.isServerAuthoritative,
       })
+    } finally {
+      securityEngine.releaseLock(lockKey)
     }
-  }
-
-  // Masadaki mevcut bahislerle çarkı anında çevirme
-  const handleSpinNow = async () => {
-    if (isSpinning) return
-    const spinData = await authoritativeClient.requestSpin(N)
-    const randomWinningSeg = spinData.winningSeg
-    const proofData = {
-      hash: spinData.serverSeedHash || spinData.rawHex || '',
-      clientSeed: spinData.clientSeed,
-      nonce: spinData.nonce,
-      authoritative: spinData.isServerAuthoritative,
-    }
-    setProvablyProof(proofData)
-
-    await triggerSpinWithBet(seat, null, 0, randomWinningSeg, {
-      serverSeedHash: proofData.hash,
-      clientSeed: proofData.clientSeed,
-      nonce: proofData.nonce,
-      rawHex: spinData.rawHex,
-      authoritative: spinData.isServerAuthoritative,
-    })
   }
 
   if (!game) return <div className="statusband">⏳ masa kuruluyor…</div>
@@ -361,6 +419,12 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
         {isHost ? ' ·  HOST' : ''}
       </div>
 
+      {nearMissAlert && (
+        <div className="near-miss-banner">
+          {nearMissAlert}
+        </div>
+      )}
+
       {/* Bahis & Çip Kontrolleri */}
       <div className="controls">
         <span style={{ fontSize: '0.75rem', color: 'var(--dim)', marginRight: '4px', fontWeight: '700' }}>
@@ -453,9 +517,18 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ color: 'var(--gold)', fontWeight: '700' }}>🛡️ Authoritative RNG (HMAC-SHA256)</span>
-          <span style={{ color: '#00c26e', fontSize: '0.65rem' }}>
-            {provablyProof?.authoritative !== false ? '● Server Authoritative' : '● Cryptographic WebCrypto'}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ color: '#00c26e', fontSize: '0.65rem' }}>
+              {provablyProof?.authoritative !== false ? '● Server Authoritative' : '● Cryptographic WebCrypto'}
+            </span>
+            <button
+              className="pf-badge-btn"
+              onClick={() => setIsProvablyModalOpen(true)}
+              title="Kriptografik olarak sonucu doğrula"
+            >
+              🔍 Doğrula
+            </button>
+          </div>
         </div>
         {provablyProof && provablyProof.hash ? (
           <div style={{ wordBreak: 'break-all', fontFamily: 'monospace', fontSize: '0.65rem' }}>
@@ -465,6 +538,14 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
           <div style={{ fontSize: '0.65rem' }}>Her dönüş GLI-19 standardında HMAC-SHA256 sunucu taahhüdüyle üretilir.</div>
         )}
       </div>
+
+      {/* Provably Fair Doğrulama Modalı */}
+      <ProvablyFairModal
+        isOpen={isProvablyModalOpen}
+        onClose={() => setIsProvablyModalOpen(false)}
+        proofData={provablyProof}
+        roundNumber={game?.round}
+      />
 
       {/* Masa Koltukları */}
       <div className="seatgrid">
