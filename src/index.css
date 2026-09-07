@@ -45,9 +45,6 @@ header .tag{font-size:.7rem; color:var(--dim); border:1px solid #2a3346; border-
   width:100%;
   height:100%;
   border-radius:50%;
-  transform-origin:50% 50%;
-  will-change:transform;
-  transition:transform var(--spin-duration, 4200ms) cubic-bezier(0.15, 0.85, 0.15, 1);
   box-shadow:0 0 45px rgba(0,0,0,.8), 0 0 25px rgba(245,179,1,.25);
 }
 .wheelbox.spinning {
@@ -100,6 +97,7 @@ header .tag{font-size:.7rem; color:var(--dim); border:1px solid #2a3346; border-
 .feed div{padding:3px 0; border-bottom:1px dashed #202a3c; animation:fin .3s}
 @keyframes fin{from{opacity:0; transform:translateY(4px)}}
 .feed .g{color:var(--green)} .feed .r{color:var(--red)} .feed .p{color:var(--purple)} .feed .y{color:var(--gold2)}
+.feed .chat-spectator{color:#93c5fd; font-style:normal; background:rgba(56, 189, 248, 0.04); border-radius:4px; padding:2px 6px; margin:2px 0;}
 
 .winner{position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:50}
 .winner .card{background:var(--panel); border:2px solid var(--gold); border-radius:20px; padding:40px; text-align:center; animation:pop .4s}

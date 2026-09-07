@@ -2,8 +2,16 @@
 // 🔴 Kökteki `balvakti/*` başka projenin verisi — DOKUNMA. Biz `soygun/` altındayız.
 import { initializeApp } from 'firebase/app'
 import {
-  getDatabase, ref, onValue, set, update, get, remove,
-  onDisconnect, runTransaction, serverTimestamp,
+  getDatabase,
+  ref,
+  onValue,
+  set as fbSet,
+  update as fbUpdate,
+  get as fbGet,
+  remove as fbRemove,
+  onDisconnect,
+  runTransaction as fbRunTransaction,
+  serverTimestamp,
 } from 'firebase/database'
 
 const firebaseConfig = {
@@ -12,9 +20,90 @@ const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig)
 export const db = getDatabase(app)
-export const ROOT = 'soygun'   // kendi isim alanımız
+export const ROOT = 'soygun' // kendi isim alanımız
 
-export { ref, onValue, set, update, get, remove, onDisconnect, runTransaction, serverTimestamp }
+// 🛡️ Hata Korumalı Güvenli DB İşlemleri (Unhandled rejection & offline resilience)
+export const set = (r, val) => {
+  try {
+    const p = fbSet(r, val)
+    if (p && typeof p.catch === 'function') {
+      return p.catch(err => {
+        console.warn('Firebase set safe-fallback:', err?.message || err)
+        return null
+      })
+    }
+    return Promise.resolve(p)
+  } catch (err) {
+    console.warn('Firebase set exception:', err)
+    return Promise.resolve(null)
+  }
+}
+
+export const update = (r, val) => {
+  try {
+    const p = fbUpdate(r, val)
+    if (p && typeof p.catch === 'function') {
+      return p.catch(err => {
+        console.warn('Firebase update safe-fallback:', err?.message || err)
+        return null
+      })
+    }
+    return Promise.resolve(p)
+  } catch (err) {
+    console.warn('Firebase update exception:', err)
+    return Promise.resolve(null)
+  }
+}
+
+export const get = (r) => {
+  try {
+    const p = fbGet(r)
+    if (p && typeof p.catch === 'function') {
+      return p.catch(err => {
+        console.warn('Firebase get safe-fallback:', err?.message || err)
+        return { exists: () => false, val: () => null }
+      })
+    }
+    return p
+  } catch (err) {
+    console.warn('Firebase get exception:', err)
+    return Promise.resolve({ exists: () => false, val: () => null })
+  }
+}
+
+export const remove = (r) => {
+  try {
+    const p = fbRemove(r)
+    if (p && typeof p.catch === 'function') {
+      return p.catch(err => {
+        console.warn('Firebase remove safe-fallback:', err?.message || err)
+        return null
+      })
+    }
+    return Promise.resolve(p)
+  } catch (err) {
+    console.warn('Firebase remove exception:', err)
+    return Promise.resolve(null)
+  }
+}
+
+export const runTransaction = (r, updateFn, options) => {
+  try {
+    const p = fbRunTransaction(r, updateFn, options)
+    if (p && typeof p.catch === 'function') {
+      return p.catch(err => {
+        console.warn('Firebase runTransaction safe-fallback:', err?.message || err)
+        return { committed: false, snapshot: { exists: () => false, val: () => null } }
+      })
+    }
+    return p
+  } catch (err) {
+    console.warn('Firebase transaction exception:', err)
+    return Promise.resolve({ committed: false, snapshot: { exists: () => false, val: () => null } })
+  }
+}
+
+export { ref, onValue, onDisconnect, serverTimestamp }
 
 // Kimlik: Telegram user → gerçek; değilse kalıcı misafir id
 export function identity() {
@@ -25,8 +114,7 @@ export function identity() {
   return { uid, name: localStorage.getItem('sg_name') || ('MISAFIR' + uid.slice(-3).toUpperCase()), tg: false }
 }
 
-// Demo cüzdan: user başına kalıcı sahte EVM adresi üret, DB'ye eşle.
-// (Gerçek sürümde TON Connect ile kullanıcının KENDİ cüzdanı bağlanır.)
+// Demo cüzdan
 export function demoWallet(uid) {
   let w = localStorage.getItem('sg_wallet')
   if (!w) {

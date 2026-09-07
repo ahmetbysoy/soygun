@@ -10,6 +10,7 @@ import { walletManager } from './wallet.js'
 import ShopModal from './components/ShopModal.jsx'
 import LoyaltyModal from './components/LoyaltyModal.jsx'
 import FinancialMetricsModal from './components/FinancialMetricsModal.jsx'
+import RealTimeRevenueDashboard from './components/RealTimeRevenueDashboard.jsx'
 import WhaleNotificationToast from './components/WhaleNotificationToast.jsx'
 import SunkCostModal from './components/SunkCostModal.jsx'
 import ResurrectionModal from './components/ResurrectionModal.jsx'
@@ -34,6 +35,7 @@ export default function App() {
   const [isShopOpen, setIsShopOpen] = useState(false)
   const [isLoyaltyOpen, setIsLoyaltyOpen] = useState(false)
   const [isMetricsOpen, setIsMetricsOpen] = useState(false)
+  const [isRevenueDashboardOpen, setIsRevenueDashboardOpen] = useState(false)
   const [loyaltyData, setLoyaltyData] = useState(null)
   const [sunkCostWarning, setSunkCostWarning] = useState(null)
   const [resurrectionOffer, setResurrectionOffer] = useState(null)
@@ -263,6 +265,13 @@ export default function App() {
         >
           📊 RTP & Finans (%97.1)
         </button>
+        <button
+          className="btn ghost sm"
+          style={{ borderColor: '#00c26e', color: '#00e575', background: 'rgba(0, 194, 110, 0.1)' }}
+          onClick={() => setIsRevenueDashboardOpen(true)}
+        >
+          ⚡ Admin & Hasılat
+        </button>
       </div>
 
       {screen === 'lobby' ? (
@@ -294,6 +303,37 @@ export default function App() {
                 ? `Protokol: ${walletState.walletType}`
                 : `Gerçek kripto cüzdanını bağla ${me.tg ? '(Telegram)' : '(Web3)'}`}
             </div>
+
+            {walletState.isConnected && walletState.riskProfile && (
+              <div style={{
+                marginTop: '8px',
+                padding: '8px 10px',
+                background: 'rgba(255, 215, 0, 0.08)',
+                border: '1px solid rgba(255, 215, 0, 0.3)',
+                borderRadius: '6px',
+                fontSize: '0.72rem',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <span style={{ fontWeight: 800, color: '#ffd700' }}>
+                    {walletState.riskProfile.tier}
+                  </span>
+                  <span style={{ background: '#222', padding: '1px 6px', borderRadius: '4px', color: '#00e575', fontWeight: 800 }}>
+                    Risk Skoru: {walletState.riskProfile.riskScore}/100
+                  </span>
+                </div>
+                <div style={{ color: '#cbd5e1', fontSize: '0.68rem', marginBottom: '4px' }}>
+                  💎 Portföy: ~${walletState.riskProfile.portfolioValueUsd?.toLocaleString()} USD · {walletState.riskProfile.onChainTxCount} Tx
+                </div>
+                {walletState.riskProfile.holdings?.length > 0 && (
+                  <div style={{ color: '#94a3b8', fontSize: '0.65rem' }}>
+                    🖼️ Tespit Edilen Varlıklar: {walletState.riskProfile.holdings.slice(0, 2).join(', ')}
+                  </div>
+                )}
+                <div style={{ marginTop: '4px', color: '#ff6666', fontWeight: 700, fontSize: '0.65rem' }}>
+                  ⚡ {walletState.riskProfile.dopamineStrategy}
+                </div>
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
               {!walletState.isConnected ? (
@@ -412,6 +452,7 @@ export default function App() {
         isOpen={isLoyaltyOpen}
         onClose={() => setIsLoyaltyOpen(false)}
         uid={me.uid}
+        onOpenShop={() => setIsShopOpen(true)}
         onClaimed={() => {
           refreshLoyalty()
         }}
@@ -425,6 +466,14 @@ export default function App() {
         game={game}
         userBal={bal}
         totalWagered={loyaltyData?.totalWagered || 0}
+      />
+
+      {/* ⚡ Merkezi Kasa & Hasılat Yönetim Paneli (Admin Real-Time Dashboard) */}
+      <RealTimeRevenueDashboard
+        isOpen={isRevenueDashboardOpen}
+        onClose={() => setIsRevenueDashboardOpen(false)}
+        gameData={game}
+        econData={econ}
       />
     </div>
   )

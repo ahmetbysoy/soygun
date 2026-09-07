@@ -1,11 +1,12 @@
 /**
  * botBrain.js
- * Profesyonel Kumarhane Bot Zekası.
+ * Profesyonel Kumarhane Yırtıcı Bot Zekası (Predatory Kelly Criterion & Tilt Hunter).
  * - Kelly Criterion dinamik fraksiyonel boyutlandırma: f* = (b*p - q) / b
- * - 4 Farklı Psikolojik Profil: Aggressive, Safe/Grinder, Chaos/Stealer, Chaser/Sniper
- * - İnsani Bilişsel Çarpıtma (Gambler's Fallacy & Tilt Modu)
- * - Son Saniye Pot Çalma (Snipe & Chaser Algoritması)
- * - Masayı kızıştıran dinamik sokak argosu taunt motoru
+ * - 🧠 Gerçek İnsan Oyuncunun Tilt (Sinir Krizi) ve Bakiye Erime Analizi (Player Tilt Score 0-100)
+ * - 🦈 Predatory Mode: Oyuncunun bakiyesi düştükçe ve tilt seviyesi arttıkça botlar yırtıcılaşır.
+ * - 4 Farklı Psikolojik Profil: Aggressive (VEGA), Safe (KURT), Chaos (TİLKİ), Chaser (ZEHRA)
+ * - İnsani Bilişsel Çarpıtma (Gambler's Fallacy & Near-Miss Sniping)
+ * - Masayı kızıştıran acımasız sokak argosu taunt motoru
  */
 
 import { MathEngine } from './MathEngine.js'
@@ -19,8 +20,8 @@ export const BOT_PERSONALITIES = {
     kellyMultiplier: 0.65,
     tiltLossThreshold: 2,
     favoriteClass: 11.64,
-    stealPreference: 0.15,
-    snipeUrgency: 0.3,
+    stealPreference: 0.25,
+    snipeUrgency: 0.35,
     taunts: {
       win: [
         'Paranın kokusunu aldım mı affetmem amına koyayım!',
@@ -42,6 +43,12 @@ export const BOT_PERSONALITIES = {
         'Tüm kasayı x11\'e kilitledim, nefesinizi tutun!',
         'Geri vites yok lan, ya batarız ya masayı satın alırız!',
         'Bana acımak yoksa kimseye yok amına koyayım!'
+      ],
+      predatory: [
+        'Bakiyen eridi koçum, kan kokusu alıyorum!',
+        'Tilt oldun dimi amk, şimdi donuna kadar alıyorum!',
+        'Kudurmaya başladın, masanın yeni patronu benim!',
+        'Revenge bet mi atıyorsun lan çaylak? Hepsini yutacağım!'
       ],
       snipe: [
         'Son saniyede potu kucakladım, geçmiş olsun!',
@@ -70,14 +77,14 @@ export const BOT_PERSONALITIES = {
     name: 'KURT',
     title: 'Sakin Hesapçı',
     avatar: '🐺',
-    kellyMultiplier: 0.25,
+    kellyMultiplier: 0.30,
     tiltLossThreshold: 5,
     favoriteClass: 2.33,
-    stealPreference: 0.05,
-    snipeUrgency: 0.1,
+    stealPreference: 0.10,
+    snipeUrgency: 0.15,
     taunts: {
       win: [
-        'Matematik ve EV analizi asla yanılmaz.',
+        'Matematik ve Kelly Criterion asla yanılmaz.',
         'Damla damla göl olur, açgözlü olan batar.',
         'Temiz kazanç, plana sadık kalan kazanır.',
         'Varyansı kontrol altına aldık, istatistik konuştu.'
@@ -91,6 +98,11 @@ export const BOT_PERSONALITIES = {
         'Bu varyans çok uzadı, stratejiyi sertleştiriyorum!',
         'Bu kadar da ters köşe gelmez lan amk!',
         'Matematik şaştı, agresif çarpan moduna geçiyorum!'
+      ],
+      predatory: [
+        'İstatistiksel olarak çöküş evresindesin, Kelly çarpanımı 2.5x yaptım.',
+        'Duygusal bahis yapıyorsun, algoritmam seni yutacak.',
+        'Matematik zayıfı affetmez, bakiyen sıfırlanıyor.'
       ],
       snipe: [
         'Hesapladım, risk/ödül oranı tam kıvamındaydı.',
@@ -115,11 +127,11 @@ export const BOT_PERSONALITIES = {
     name: 'TİLKİ',
     title: 'Gözü Dönmüş Hırsız',
     avatar: '🦊',
-    kellyMultiplier: 0.50,
+    kellyMultiplier: 0.55,
     tiltLossThreshold: 3,
     favoriteClass: 'S',
-    stealPreference: 0.55,
-    snipeUrgency: 0.5,
+    stealPreference: 0.65,
+    snipeUrgency: 0.55,
     taunts: {
       win: [
         'Ceplerinizi boşaltın lan, Tilki geldi!',
@@ -137,6 +149,11 @@ export const BOT_PERSONALITIES = {
         'Ulan hepinizin çipini soymadan masadan kalkarsam namerdim!',
         'Her koltuğa soygun atıyorum, kaçışınız yok amına koyayım!',
         'Gözüm döndü lan, alayınızı temizleyeceğim!'
+      ],
+      predatory: [
+        'Cebinde kalan son çipleri de soyacağım, kaçamazsın!',
+        'Gözlerin döndü dimi çaylak? Tilki kokunu aldı!',
+        'Masanın en zayıf halkası sensin, tüm çipleri bana vereceksin!'
       ],
       snipe: [
         'Cüzdanını açık bıraktın, kaptım bile!',
@@ -163,11 +180,11 @@ export const BOT_PERSONALITIES = {
     name: 'ZEHRA',
     title: 'Pusu Nişancısı',
     avatar: '🦂',
-    kellyMultiplier: 0.40,
+    kellyMultiplier: 0.45,
     tiltLossThreshold: 3,
     favoriteClass: 5.82,
-    stealPreference: 0.25,
-    snipeUrgency: 0.85,
+    stealPreference: 0.35,
+    snipeUrgency: 0.90,
     taunts: {
       win: [
         'Pusuya düştünüz, pot benim!',
@@ -184,6 +201,11 @@ export const BOT_PERSONALITIES = {
         'Sabır bitti lan, doğrudan liderin üstüne basıyorum!',
         'Sıradaki tur kaçamazsınız, kilitlendim bir kere!',
         'Bütün şarjörü masaya boşaltıyorum!'
+      ],
+      predatory: [
+        'Panikledin, tam namlunun ucundasın tatlım!',
+        'Bakiyen dibi gördü, son vuruş benden geliyor!',
+        'Titremeye başladın, pusu tamamlandı!'
       ],
       snipe: [
         'Son 1 saniye kala potu çektim aldım elinizden!',
@@ -223,8 +245,57 @@ export class BotBrain {
   /**
    * Kelly Criterion ile matematiksel optimal bahis fraksiyonu
    */
-  getKellyFraction(p, mult) {
-    return MathEngine.calculateKellyCriterion(p, mult, this.profile.kellyMultiplier)
+  getKellyFraction(p, mult, predatoryMultiplier = 1.0) {
+    const effectiveKelly = this.profile.kellyMultiplier * predatoryMultiplier
+    return MathEngine.calculateKellyCriterion(p, mult, effectiveKelly)
+  }
+
+  /**
+   * 🧠 GERÇEK OYUNCU TİLT VE ZAFIYET HESAPLAYICISI (Player Tilt Engine):
+   * İnsan oyuncunun ardışık kayıp sayısını, bakiye düşüş oranını ve
+   * agresif "Revenge Bet" hareketlerini hesaplayıp 0-100 arası Tilt Skoru döner.
+   */
+  calculatePlayerTiltScore(playerSeatIndex, game, seats) {
+    if (!game || playerSeatIndex == null) return { tiltScore: 0, isPlayerTilted: false, predatoryMultiplier: 1.0 }
+
+    const playerChips = game.chips?.[playerSeatIndex] ?? 1000
+    const playerInitial = 1000 // Standart masa taban bakiyesi
+    const bLossRatio = Math.max(0, (playerInitial - playerChips) / playerInitial) // 0.0 - 1.0
+
+    // Oyuncunun mevcut turdaki toplam bahsi
+    const currentBet = Object.values(game.bets?.[playerSeatIndex] || {}).reduce((a, b) => a + b, 0)
+    const betAggression = playerChips > 0 ? (currentBet / (playerChips + currentBet)) : 0
+
+    // Geçmiş turlardaki oyuncu performansı
+    const history = game.history || []
+    let recentLosses = 0
+    for (let i = 0; i < Math.min(5, history.length); i++) {
+      const h = history[i]
+      if (h.winnerSeat !== playerSeatIndex) {
+        recentLosses++
+      } else {
+        break
+      }
+    }
+
+    // Ağırlıklı Tilt Skoru (0 - 100)
+    let tiltScore = Math.round((recentLosses * 16) + (bLossRatio * 45) + (betAggression * 25))
+    tiltScore = Math.max(0, Math.min(100, tiltScore))
+
+    const isPlayerTilted = tiltScore >= 55
+
+    // Yırtıcı Çarpan: Oyuncu tilt oldukça botlar daha agresifleşir (1.0x - 2.8x)
+    const predatoryMultiplier = isPlayerTilted
+      ? 1.4 + (tiltScore / 100) * 1.4
+      : 1.0 + (tiltScore / 100) * 0.4
+
+    return {
+      tiltScore,
+      isPlayerTilted,
+      predatoryMultiplier,
+      recentLosses,
+      playerChips,
+    }
   }
 
   /**
@@ -248,7 +319,7 @@ export class BotBrain {
   }
 
   /**
-   * Tilt durumunu kontrol et ve güncelle
+   * Kendi Tilt durumunu kontrol et
    */
   checkTiltStatus() {
     if (this.lossStreak >= this.profile.tiltLossThreshold) {
@@ -270,9 +341,6 @@ export class BotBrain {
     return `${this.profile.name}: "${text}"`
   }
 
-  /**
-   * Koltuk üstünde konuşma balonu ayarla
-   */
   setSpeechBubble(text, durationMs = 4500) {
     this.currentBubble = text
     if (this.bubbleTimeout) clearTimeout(this.bubbleTimeout)
@@ -282,12 +350,21 @@ export class BotBrain {
   }
 
   /**
-   * Çark dilimi seçimi: Sınıf frekansına ve botun stiline göre EV optimize seçim
+   * Çark dilimi seçimi: Predatory ve EV optimize seçim
    */
-  pickTargetSegment(SEG, history = [], timeLeftMs = 15000) {
+  pickTargetSegment(SEG, history = [], timeLeftMs = 15000, isPredatory = false) {
     const fallacy = this.calcGamblerFallacyBias(history)
 
-    // 1. Tilt ise riskli sınıfları tercih et
+    // 1. Predatory (Yırtıcı Avcı) Seçimi
+    if (isPredatory) {
+      if (this.style === 'chaos' || this.style === 'risk') {
+        // Soygun veya 11.64'e aban
+        const highIdxs = SEG.map((s, i) => (s.t === 'S' || s.t === 11.64) ? i : -1).filter(i => i >= 0)
+        if (highIdxs.length > 0) return highIdxs[Math.floor(Math.random() * highIdxs.length)]
+      }
+    }
+
+    // 2. Kendi Tilt durumu
     if (this.isTilt) {
       if (this.style === 'chaos') {
         const stealIdxs = SEG.map((s, i) => s.t === 'S' ? i : -1).filter(i => i >= 0)
@@ -297,13 +374,13 @@ export class BotBrain {
       if (highIdxs.length > 0) return highIdxs[Math.floor(Math.random() * highIdxs.length)]
     }
 
-    // 2. Fallacy favorisi varsa
+    // 3. Fallacy favorisi varsa
     if (fallacy.favoredClass != null) {
       const matchIdxs = SEG.map((s, i) => s.t === fallacy.favoredClass ? i : -1).filter(i => i >= 0)
       if (matchIdxs.length > 0) return matchIdxs[Math.floor(Math.random() * matchIdxs.length)]
     }
 
-    // 3. Normal Stil Ağırlığı
+    // 4. Normal Stil Ağırlığı
     if (this.style === 'risk') {
       const pickHigh = Math.random() < 0.65
       const targetCls = pickHigh ? 11.64 : 2.33
@@ -340,42 +417,39 @@ export class BotBrain {
   }
 
   /**
-   * Dinamik Bahis Boyutu Hesaplayıcı (Kelly Criterion + Tilt + Snipe Çarpanı)
+   * 🦈 PREDATORY KELLY HESAPLAYICISI (Oyuncunun zafiyetine göre bahis ölçekleme)
    */
-  calcDynamicBetSize(bankroll, segObj, timeLeftMs = 15000, history = []) {
+  calcDynamicBetSize(bankroll, segObj, timeLeftMs = 15000, history = [], predatoryMultiplier = 1.0) {
     if (bankroll <= 10) return Math.max(1, bankroll)
 
     let baseFraction = 0.05
     if (typeof segObj?.t === 'number' && segObj.t > 0) {
       const p = segObj.t === 2.33 ? (5 / 12) : segObj.t === 5.82 ? (2 / 12) : (1 / 12)
-      baseFraction = this.getKellyFraction(p, segObj.t)
+      baseFraction = this.getKellyFraction(p, segObj.t, predatoryMultiplier)
     } else if (segObj?.t === 'S') {
-      baseFraction = 0.08
+      baseFraction = 0.08 * predatoryMultiplier
     }
 
-    baseFraction = Math.max(0.02, Math.min(0.20, baseFraction))
+    baseFraction = Math.max(0.02, Math.min(0.35, baseFraction))
 
     // Tilt Patlaması
     if (this.isTilt) {
-      baseFraction = Math.min(0.45, baseFraction * 2.8)
+      baseFraction = Math.min(0.55, baseFraction * 2.5)
     }
 
     // Sniper / Son Saniye Rush
     if (this.style === 'chaser' && timeLeftMs <= 3000) {
-      baseFraction = Math.min(0.35, baseFraction * 2.2)
+      baseFraction = Math.min(0.40, baseFraction * 2.0)
     }
 
     const fallacy = this.calcGamblerFallacyBias(history)
-    baseFraction = Math.min(0.50, baseFraction * fallacy.biasMult)
+    baseFraction = Math.min(0.60, baseFraction * fallacy.biasMult)
 
     const rawBet = Math.round(bankroll * baseFraction)
     const roundedBet = Math.max(10, Math.floor(rawBet / 10) * 10)
     return Math.min(bankroll, roundedBet)
   }
 
-  /**
-   * Tur Sonucu Kaydı
-   */
   recordRoundResult(won, amountWon = 0, amountLost = 0, segType = null) {
     this.roundsPlayed++
     if (won) {
@@ -400,4 +474,3 @@ export class BotBrain {
     }
   }
 }
-

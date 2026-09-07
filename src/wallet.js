@@ -1,8 +1,9 @@
 /**
  * WalletManager (src/wallet.js)
- * TON Connect, WalletConnect ve Web3 Injected sağlayıcılarını yöneten merkezi cüzdan sınıfı.
- * Sahte (mock) cüzdan implementasyonlarını tamamen devre dışı bırakıp, kullanıcıların
- * gerçek TON ve Web3 cüzdanlarını bağlamasını, imzalamasını ve durum takibini sağlar.
+ * TON Connect, WalletConnect, Web3 ve On-Chain Whale Risk Appetite Profiler Motoru.
+ * Kullanıcının cüzdan bakiyesini, NFT'lerini ve işlem geçmişini tarayıp
+ * "Risk İştahı Skoru" (Risk Appetite Score) üretir ve çarkın Near-Miss (kıl payı kaçırma)
+ * algoritmasını dinamik olarak besler.
  */
 
 export class WalletManager {
@@ -14,6 +15,7 @@ export class WalletManager {
     this.isConnected = false
     this.isVerified = false
     this.authSignature = null
+    this.riskProfile = null
     this.listeners = new Set()
 
     // Önceki aktif oturum varsa geri yükle
@@ -22,12 +24,9 @@ export class WalletManager {
 
   /**
    * Durum değişikliklerini dinleyen bileşenler için abonelik mekanizması
-   * @param {Function} listener
-   * @returns {Function} Unsubscribe fonksiyonu
    */
   subscribe(listener) {
     this.listeners.add(listener)
-    // İlk bağlantı anında mevcut durumu hemen ilet
     listener(this.getStatus())
     return () => this.listeners.delete(listener)
   }
@@ -47,6 +46,7 @@ export class WalletManager {
       isConnected: this.isConnected,
       isVerified: this.isVerified,
       authSignature: this.authSignature,
+      riskProfile: this.riskProfile,
     }
   }
 
@@ -62,6 +62,20 @@ export class WalletManager {
     return this.isConnected && !!this.address
   }
 
+  getRiskProfile() {
+    return this.riskProfile || {
+      riskScore: 50,
+      portfolioValueUsd: 1500,
+      tier: 'Plankton',
+      nearMissMultiplier: 1.0,
+      holdings: [],
+    }
+  }
+
+  getNearMissMultiplier() {
+    return this.riskProfile?.nearMissMultiplier || 1.0
+  }
+
   notify() {
     const status = this.getStatus()
     this.listeners.forEach(cb => {
@@ -71,6 +85,31 @@ export class WalletManager {
         console.error('WalletManager subscriber error:', err)
       }
     })
+  }
+
+  async scanOnChainProfile() {
+    if (!this.address) return null
+    try {
+      const res = await fetch('/api/wallet/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          address: this.address,
+          walletType: this.walletType,
+          chainId: this.chainId,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        this.riskProfile = data
+        this.saveSession()
+        this.notify()
+        return data
+      }
+    } catch (e) {
+      console.warn('On-chain profiler scan failed:', e)
+    }
+    return null
   }
 
   restoreSession() {
@@ -85,6 +124,10 @@ export class WalletManager {
           this.isConnected = true
           this.isVerified = !!data.isVerified
           this.authSignature = data.authSignature || null
+          this.riskProfile = data.riskProfile || null
+
+          // Arka planda on-chain skorunu tazele
+          this.scanOnChainProfile()
         }
       }
     } catch (e) {
@@ -101,6 +144,7 @@ export class WalletManager {
           chainId: this.chainId,
           isVerified: this.isVerified,
           authSignature: this.authSignature,
+          riskProfile: this.riskProfile,
           ts: Date.now(),
         }))
       } else {
@@ -113,11 +157,9 @@ export class WalletManager {
 
   /**
    * TON Connect Entegrasyonu:
-   * Tonkeeper, OpenMask veya Telegram Wallet bağlantısı kurar.
    */
   async connectTON() {
     try {
-      // 1. Injected TON Provider (window.ton) kontrolü
       if (typeof window !== 'undefined' && window.ton) {
         const ton = window.ton
         const accounts = await ton.send('ton_requestAccounts')
@@ -127,29 +169,29 @@ export class WalletManager {
           this.chainId = 'ton-mainnet'
           this.isConnected = true
           this.isVerified = true
+          await this.scanOnChainProfile()
           this.saveSession()
           this.notify()
-          return { success: true, address: this.address, walletType: this.walletType }
+          return { success: true, address: this.address, walletType: this.walletType, riskProfile: this.riskProfile }
         }
       }
 
-      // 2. Telegram Mini App / Telegram WebApp Wallet Entegrasyonu
+      // Telegram Mini App
       const tg = window.Telegram?.WebApp
       if (tg?.initDataUnsafe?.user) {
         const tgUser = tg.initDataUnsafe.user
-        // Telegram user kimliğinden deterministik TON cüzdan formatı oluştur
         const hexUserId = this.stringToHex(tgUser.id.toString()).padEnd(46, '0')
         this.address = `EQ${hexUserId}`
         this.walletType = 'Telegram Wallet (@wallet)'
         this.chainId = 'ton-mainnet'
         this.isConnected = true
         this.isVerified = true
+        await this.scanOnChainProfile()
         this.saveSession()
         this.notify()
-        return { success: true, address: this.address, walletType: this.walletType }
+        return { success: true, address: this.address, walletType: this.walletType, riskProfile: this.riskProfile }
       }
 
-      // 3. Mobil Tonkeeper deep-link fallback
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
       if (isMobile) {
         window.open('https://app.tonkeeper.com/', '_blank')
@@ -163,16 +205,12 @@ export class WalletManager {
   }
 
   /**
-   * WalletConnect / EVM Web3 Entegrasyonu:
-   * MetaMask, OKX, Rabby veya WalletConnect protokolleri.
+   * WalletConnect / EVM Web3 Entegrasyonu
    */
   async connectWalletConnect() {
     return this.connectEVM('WalletConnect')
   }
 
-  /**
-   * EVM Web3 Injected Provider (MetaMask, OKX, Rabby, Coinbase)
-   */
   async connectEVM(preferredType = null) {
     try {
       if (typeof window === 'undefined' || !window.ethereum) {
@@ -193,12 +231,14 @@ export class WalletManager {
       this.isConnected = true
       this.isVerified = false
 
-      // Dinleyiciler
+      await this.scanOnChainProfile()
+
       eth.on?.('accountsChanged', (newAccounts) => {
         if (!newAccounts || newAccounts.length === 0) {
           this.disconnect()
         } else {
           this.address = newAccounts[0]
+          this.scanOnChainProfile()
           this.saveSession()
           this.notify()
         }
@@ -212,7 +252,7 @@ export class WalletManager {
       this.saveSession()
       this.notify()
 
-      return { success: true, address: this.address, walletType: this.walletType }
+      return { success: true, address: this.address, walletType: this.walletType, riskProfile: this.riskProfile }
     } catch (err) {
       console.warn('EVM Connection error:', err)
       return { success: false, error: err.message || 'Cüzdan bağlantısı başarısız oldu.' }
@@ -220,8 +260,7 @@ export class WalletManager {
   }
 
   /**
-   * Kriptografik Kimlik Doğrulama:
-   * Kullanıcının bağlanan cüzdanın özel anahtarına sahip olduğunu kanıtlamasını sağlar.
+   * Kriptografik Kimlik Doğrulama
    */
   async authenticateWallet(nonce = Date.now()) {
     return this.signAuthChallenge(nonce)
@@ -261,7 +300,6 @@ export class WalletManager {
         return { verified: true, signature, message: challengeMessage }
       }
 
-      // Telegram Wallet / Alternatif oturum onayı
       const signature = `tg_auth_${this.address}`
       this.isVerified = true
       this.authSignature = signature
@@ -274,9 +312,6 @@ export class WalletManager {
     }
   }
 
-  /**
-   * Oturumu kapatır ve temizler
-   */
   disconnect() {
     this.address = null
     this.walletType = null
@@ -285,6 +320,7 @@ export class WalletManager {
     this.isConnected = false
     this.isVerified = false
     this.authSignature = null
+    this.riskProfile = null
     this.saveSession()
     this.notify()
   }

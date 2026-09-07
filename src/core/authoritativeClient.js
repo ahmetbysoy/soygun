@@ -47,9 +47,9 @@ export class AuthoritativeClient {
 
   /**
    * Authoritative Spin:
-   * Sunucu üzerinden GLI-19 uyumlu HMAC-SHA256 ile kazanan dilimi çeker.
+   * Sunucu üzerinden GLI-19 uyumlu HMAC-SHA256 ve Dynamic House Edge ile kazanan dilimi çeker.
    */
-  async requestSpin(segmentCount = 12) {
+  async requestSpin(segmentCount = 12, betsSummary = null) {
     try {
       const res = await fetch('/api/game/spin', {
         method: 'POST',
@@ -57,6 +57,7 @@ export class AuthoritativeClient {
         body: JSON.stringify({
           clientSeed: this.clientSeed,
           segmentCount,
+          betsSummary,
         }),
       })
 
@@ -69,6 +70,8 @@ export class AuthoritativeClient {
             clientSeed: data.clientSeed,
             nonce: data.nonce,
             rawHex: data.rawHexSignature,
+            houseEdge: data.houseEdge,
+            whaleShieldActive: data.whaleShieldActive,
             isServerAuthoritative: true,
           }
         }
@@ -85,6 +88,8 @@ export class AuthoritativeClient {
       clientSeed: localResult.clientSeed,
       nonce: localResult.nonce,
       rawHex: localResult.rawHex,
+      houseEdge: 3.5,
+      whaleShieldActive: false,
       isServerAuthoritative: false,
     }
   }

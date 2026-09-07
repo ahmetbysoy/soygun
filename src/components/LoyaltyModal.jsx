@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react'
 import { getUserLoyalty, claimRakeback, claimDailyStreak } from '../economy.js'
 import { VIP_TIERS } from '../core/MathEngine.js'
 
-export default function LoyaltyModal({ isOpen, onClose, uid, onClaimed }) {
+export default function LoyaltyModal({ isOpen, onClose, uid, onClaimed, onOpenShop }) {
   const [loyalty, setLoyalty] = useState(null)
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState('')
+  const [isLockedNotice, setIsLockedNotice] = useState(false)
 
   const loadData = async () => {
     if (!uid) return
@@ -17,6 +18,7 @@ export default function LoyaltyModal({ isOpen, onClose, uid, onClaimed }) {
     if (isOpen) {
       loadData()
       setMsg('')
+      setIsLockedNotice(false)
     }
   }, [isOpen, uid])
 
@@ -28,10 +30,14 @@ export default function LoyaltyModal({ isOpen, onClose, uid, onClaimed }) {
     setLoading(false)
     if (res.ok) {
       setMsg(`💰 Harika! ${res.claimed} çip rakeback bakiyene aktarıldı!`)
+      setIsLockedNotice(false)
       loadData()
       if (onClaimed) onClaimed()
     } else {
       setMsg(res.msg)
+      if (res.isLocked) {
+        setIsLockedNotice(true)
+      }
     }
   }
 
@@ -52,6 +58,12 @@ export default function LoyaltyModal({ isOpen, onClose, uid, onClaimed }) {
   const currentStreak = loyalty?.streak || 0
   const todayStr = new Date().toISOString().slice(0, 10)
   const isClaimedToday = loyalty?.lastDaily === todayStr
+
+  const chipUsd = loyalty?.chipUsdValue || 0.01
+  const accumulatedChips = loyalty?.accumulatedRakeback || 0
+  const lockedChips = loyalty?.lockedRakeback || 0
+  const unlockedChips = loyalty?.unlockedRakeback || 0
+  const totalUsdVal = (accumulatedChips * chipUsd).toFixed(2)
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -85,20 +97,80 @@ export default function LoyaltyModal({ isOpen, onClose, uid, onClaimed }) {
                 </div>
               </div>
 
-              {/* Rakeback Tahsilat Bölümü */}
-              <div className="rakeback-claim-row">
-                <div>
-                  <div className="rb-label">Biriken Nakit/Çip İadesi</div>
-                  <div className="rb-val">💰 {loyalty.accumulatedRakeback} Çip</div>
+              {/* Sunk-Cost Kilitli Rakeback Bölümü */}
+              <div className="rakeback-claim-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div className="rb-label">
+                      Kayıp İade Kasası {lockedChips > 0 ? '(🔒 Rehin Kilitli)' : ''}
+                    </div>
+                    <div className="rb-val" style={{ color: lockedChips > 0 ? '#ffd700' : '#00e575' }}>
+                      💰 {accumulatedChips} Çip <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>(~${totalUsdVal} USD)</span>
+                    </div>
+                  </div>
+
+                  {unlockedChips > 0 ? (
+                    <button
+                      className="btn"
+                      style={{ background: '#00e575', color: '#000', fontWeight: 800 }}
+                      disabled={loading}
+                      onClick={handleClaimRakeback}
+                    >
+                      Tahsil Et ({unlockedChips} Çip)
+                    </button>
+                  ) : (
+                    <button
+                      className="btn"
+                      style={{
+                        background: lockedChips > 0 ? 'linear-gradient(135deg, #ffd700, #ff8c00)' : '#333',
+                        color: lockedChips > 0 ? '#000' : '#888',
+                        fontWeight: 900,
+                      }}
+                      disabled={loading || accumulatedChips <= 0}
+                      onClick={handleClaimRakeback}
+                    >
+                      {lockedChips > 0 ? '🔒 Kilidi Aç & Al' : 'Tahsil Et'}
+                    </button>
+                  )}
                 </div>
-                <button
-                  className="btn"
-                  style={{ background: 'var(--gold)', color: '#000', fontWeight: 800 }}
-                  disabled={loading || loyalty.accumulatedRakeback <= 0}
-                  onClick={handleClaimRakeback}
-                >
-                  Tahsil Et
-                </button>
+
+                {lockedChips > 0 && (
+                  <div style={{
+                    background: 'rgba(255, 215, 0, 0.08)',
+                    border: '1px dashed rgba(255, 215, 0, 0.35)',
+                    borderRadius: '6px',
+                    padding: '6px 10px',
+                    fontSize: '0.72rem',
+                    color: '#ffd75e',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}>
+                    <span>⚠️ <b>Sunk-Cost Kilidi:</b> {lockedChips} çip rehin tutuluyor. Yeni çip paketi aldığın an kilit açılır ve hepsi bakiyene aktarılır!</span>
+                    {onOpenShop && (
+                      <button
+                        style={{
+                          background: '#ffd700',
+                          border: 'none',
+                          color: '#000',
+                          fontWeight: 900,
+                          fontSize: '0.68rem',
+                          padding: '3px 8px',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          marginLeft: '6px',
+                        }}
+                        onClick={() => {
+                          onClose()
+                          onOpenShop()
+                        }}
+                      >
+                        🛒 Çip Al & Kilidi Aç
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -146,7 +218,7 @@ export default function LoyaltyModal({ isOpen, onClose, uid, onClaimed }) {
           </>
         )}
 
-        {msg && <div className="status-banner">{msg}</div>}
+        {msg && <div className="status-banner" style={{ marginTop: '10px' }}>{msg}</div>}
       </div>
     </div>
   )

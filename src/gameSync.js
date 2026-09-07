@@ -107,6 +107,14 @@ export function injectBotBets(game, seats) {
   const timeLeftMs = Math.max(0, (game.phaseUntil || 0) - now())
   const botStatesPatch = {}
 
+  // Gerçek insan oyuncunun koltuğunu bul
+  const realPlayerSeat = seats.findIndex(s => s != null)
+  let playerTiltInfo = { tiltScore: 0, isPlayerTilted: false, predatoryMultiplier: 1.0 }
+
+  if (realPlayerSeat !== -1 && botBrains[0]) {
+    playerTiltInfo = botBrains[0].calculatePlayerTiltScore(realPlayerSeat, game, seats)
+  }
+
   for (let i = 0; i < N_SEATS; i++) {
     if (seats[i]) continue                       // gerçek oyuncu → bot değil
     if (game.out?.[i]) continue
@@ -116,30 +124,40 @@ export function injectBotBets(game, seats) {
     // Chaser/Sniper bot son 3 saniyede %85 oranında pusuya yatar
     const isSniperTime = brain.style === 'chaser' && timeLeftMs <= 3200
     const isTilt = brain.checkTiltStatus()
+    const isPredatory = playerTiltInfo.isPlayerTilted
 
     botStatesPatch[i] = {
       isTilt,
       isSniper: isSniperTime,
+      isPredatory,
       style: brain.style,
       name: brain.profile.name,
       title: brain.profile.title,
       avatar: brain.profile.avatar,
+      predatoryMult: playerTiltInfo.predatoryMultiplier.toFixed(2),
     }
 
-    if (!isSniperTime && !isTilt && Math.random() >= 0.38) continue
+    if (!isSniperTime && !isTilt && !isPredatory && Math.random() >= 0.38) continue
 
     const spent = Object.values(game.bets?.[i] || {}).reduce((a, x) => a + x, 0)
     const bankroll = (game.chips?.[i] ?? 0) - spent
     if (bankroll < 10) continue
 
-    const segIdx = brain.pickTargetSegment(SEG, game.history || [], timeLeftMs)
-    const amt = Math.min(brain.calcDynamicBetSize(bankroll, SEG[segIdx], timeLeftMs, game.history || []), bankroll)
+    const segIdx = brain.pickTargetSegment(SEG, game.history || [], timeLeftMs, isPredatory)
+    const amt = Math.min(
+      brain.calcDynamicBetSize(bankroll, SEG[segIdx], timeLeftMs, game.history || [], playerTiltInfo.predatoryMultiplier),
+      bankroll
+    )
 
     if (amt > 0) {
       placeBet(i, segIdx, amt)
       
-      // Sniper son saniye taunt'u & Konuşma Balonu
-      if (isSniperTime && Math.random() < 0.6) {
+      // Taunt ve Konuşma Balonları
+      if (isPredatory && Math.random() < 0.35) {
+        const taunt = brain.getRandomTaunt('predatory')
+        log(`🦈 ${taunt}`, 'r')
+        broadcastBubble(i, brain.currentBubble || '🦈 KOKUNU ALDIM, BİTTİN SEN!', 'predatory')
+      } else if (isSniperTime && Math.random() < 0.6) {
         const taunt = brain.getRandomTaunt('snipe')
         log(taunt, 'y')
         broadcastBubble(i, brain.currentBubble || '🎯 PUSUYA DÜŞTÜNÜZ!', 'snipe')
@@ -289,7 +307,8 @@ async function settlePhase(game, pool, seats = {}) {
           if (netLoss > 0) {
             const vipTier = MathEngine.getVipTier(u.total_wagered)
             const rakeback = MathEngine.calculateRakeback(netLoss, vipTier.id)
-            u.accumulated_rakeback = (u.accumulated_rakeback || 0) + rakeback
+            u.locked_rakeback = (u.locked_rakeback || 0) + rakeback
+            u.accumulated_rakeback = (u.locked_rakeback || 0) + (u.unlocked_rakeback || 0)
           }
           return u
         }).catch(() => {})
