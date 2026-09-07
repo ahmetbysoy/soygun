@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react'
 import { db, ref, onValue, set, get, update, runTransaction, ROOT } from './firebase.js'
 import { getPool, adjPool, addPaid, adjJackpot, getJackpotPool } from './economy.js'
-import { BotBrain } from './core/botBrain.js'
+import { BotBrain, getFreshBotProfile, BOT_PERSONALITIES } from './core/botBrain.js'
 import { authoritativeClient } from './core/authoritativeClient.js'
 import { MathEngine } from './core/MathEngine.js'
 
@@ -36,9 +36,27 @@ export const BOT_FALLBACK = [
   { name: 'ZEHRA', ava: '🦂', style: 'chaser' },
 ]
 
-export function seatInfo(i, seats) {
-  const s = seats[i]
+export function seatInfo(i, seats, game = null) {
+  const s = seats?.[i]
   if (s) return { name: s.name, ava: '😎', bot: false }
+  if (game?.botProfiles?.[i]) {
+    return {
+      name: game.botProfiles[i].name,
+      ava: game.botProfiles[i].ava || game.botProfiles[i].avatar || '🥷',
+      title: game.botProfiles[i].title,
+      style: game.botProfiles[i].style,
+      bot: true
+    }
+  }
+  if (botBrains[i]?.profile) {
+    return {
+      name: botBrains[i].profile.name,
+      ava: botBrains[i].profile.avatar,
+      title: botBrains[i].profile.title,
+      style: botBrains[i].profile.id,
+      bot: true
+    }
+  }
   return { ...BOT_FALLBACK[i], bot: true }
 }
 
@@ -64,17 +82,113 @@ export function hostSeat(seats) {
   return best
 }
 
+// ── Parası Biten Botları Yenileme ve Masaya Taze Kumarbaz Çağırma Motoru ──
+export async function replenishBankruptBots(game, seats) {
+  if (!game) return
+  const chips = { ...(game.chips || {}) }
+  const out = { ...(game.out || {}) }
+  const botProfiles = { ...(game.botProfiles || {}) }
+  let changed = false
+  const activeBotNames = []
+
+  for (let i = 0; i < N_SEATS; i++) {
+    if (botProfiles[i]?.name) activeBotNames.push(botProfiles[i].name)
+  }
+
+  for (let i = 0; i < N_SEATS; i++) {
+    if (seats[i]) continue // Gerçek oyuncu koltuğu dokunulmaz
+    const curChips = chips[i] ?? 0
+    const isOut = out[i] === true
+
+    // Eğer bot iflas ettiyse (bakiye < 10) veya out olduysa yerine yeni gangster botu masaya sür!
+    if (curChips < 10 || isOut || !botProfiles[i]) {
+      const newProfile = getFreshBotProfile(activeBotNames)
+      activeBotNames.push(newProfile.name)
+
+      const freshBankroll = Math.floor(1200 + Math.random() * 2000) // 1,200 - 3,200 çip
+      chips[i] = freshBankroll
+      out[i] = false
+      botProfiles[i] = {
+        name: newProfile.name,
+        ava: newProfile.avatar,
+        avatar: newProfile.avatar,
+        title: newProfile.title,
+        style: newProfile.id,
+      }
+      botBrains[i] = new BotBrain(newProfile.id)
+      changed = true
+
+      const entranceMsg = newProfile.entrance || `${newProfile.name} masaya çöktü!`
+      log(`👑 YENİ RAKİP: ${newProfile.name} (${newProfile.title}) masaya ${freshBankroll} çiple çöktü! "${entranceMsg}"`, 'g')
+      broadcastBubble(i, entranceMsg, 'win')
+    }
+  }
+
+  if (changed) {
+    const patch = { chips, out, botProfiles }
+    if (game.winnerSeat != null) {
+      patch.winnerSeat = null
+    }
+    await update(gRef(), patch)
+  }
+}
+
+// ── Masadaki Tüm Botları Zorla Yenileme (Kullanıcı / Admin Tetikleyicisi) ──
+export async function forceReloadBots(game, seats) {
+  const chips = { ...(game?.chips || {}) }
+  const out = { ...(game?.out || {}) }
+  const botProfiles = {}
+  const activeBotNames = []
+
+  for (let i = 0; i < N_SEATS; i++) {
+    if (seats[i]) continue
+    const newProfile = getFreshBotProfile(activeBotNames)
+    activeBotNames.push(newProfile.name)
+    const freshBankroll = Math.floor(1500 + Math.random() * 2000)
+    chips[i] = freshBankroll
+    out[i] = false
+    botProfiles[i] = {
+      name: newProfile.name,
+      ava: newProfile.avatar,
+      avatar: newProfile.avatar,
+      title: newProfile.title,
+      style: newProfile.id,
+    }
+    botBrains[i] = new BotBrain(newProfile.id)
+    const entranceMsg = newProfile.entrance || `${newProfile.name} masaya çöktü!`
+    log(`🔥 MASAYA YENİ KAN GELDİ: ${newProfile.name} (${newProfile.title}) ${freshBankroll} çiple oturdu!`, 'g')
+    broadcastBubble(i, entranceMsg, 'win')
+  }
+
+  const patch = { chips, out, botProfiles, winnerSeat: null, bets: {} }
+  await update(gRef(), patch)
+}
+
 // oyun node'u yoksa ilk defa kurar.
-// 🔴 runTransaction KULLANMA: cache boşken cur=null gelir ve "var olan" oyunu
-// ezerdik. get() ile gerçek "yok mu" kontrolü yap, sonra set.
 export async function initGameIfMissing() {
   const s = await get(gRef())
   if (s.exists()) return
-  const chips = {}, out = {}
-  for (let i = 0; i < N_SEATS; i++) { chips[i] = 1000; out[i] = false }
+  const chips = {}, out = {}, botProfiles = {}
+  const activeBotNames = []
+
+  for (let i = 0; i < N_SEATS; i++) {
+    const profile = getFreshBotProfile(activeBotNames)
+    activeBotNames.push(profile.name)
+    chips[i] = Math.floor(1200 + Math.random() * 1500)
+    out[i] = false
+    botProfiles[i] = {
+      name: profile.name,
+      ava: profile.avatar,
+      avatar: profile.avatar,
+      title: profile.title,
+      style: profile.id,
+    }
+    botBrains[i] = new BotBrain(profile.id)
+  }
+
   return set(gRef(), {
     phase: 'bet', round: 1, phaseUntil: now() + BET_S * 1000,
-    bets: {}, chips, out, segResult: null, winnerSeat: null, feed: {},
+    bets: {}, chips, out, botProfiles, segResult: null, winnerSeat: null, feed: {},
   })
 }
 
@@ -117,9 +231,14 @@ export function injectBotBets(game, seats) {
 
   for (let i = 0; i < N_SEATS; i++) {
     if (seats[i]) continue                       // gerçek oyuncu → bot değil
-    if (game.out?.[i]) continue
+    
+    // Eğer botun parası bitmişse anında yenileme tetikle
+    if ((game.chips?.[i] ?? 0) < 10 || game.out?.[i]) {
+      replenishBankruptBots(game, seats)
+      continue
+    }
 
-    const brain = botBrains[i]
+    const brain = botBrains[i] || new BotBrain('risk')
 
     // Chaser/Sniper bot son 3 saniyede %85 oranında pusuya yatar
     const isSniperTime = brain.style === 'chaser' && timeLeftMs <= 3200
@@ -131,9 +250,9 @@ export function injectBotBets(game, seats) {
       isSniper: isSniperTime,
       isPredatory,
       style: brain.style,
-      name: brain.profile.name,
-      title: brain.profile.title,
-      avatar: brain.profile.avatar,
+      name: game.botProfiles?.[i]?.name || brain.profile.name,
+      title: game.botProfiles?.[i]?.title || brain.profile.title,
+      avatar: game.botProfiles?.[i]?.ava || brain.profile.avatar,
       predatoryMult: playerTiltInfo.predatoryMultiplier.toFixed(2),
     }
 
@@ -341,12 +460,18 @@ async function settlePhase(game, pool, seats = {}) {
   log(`🎯 T${game.round}: ${seg.l}${effMult !== seg.t ? ` →x${effMult.toFixed(2)}` : ''} · pot ${game.pot || 0}`)
 }
 
-function startRound(game, seats) {
-  if (game.winnerSeat != null) return             // oyun bitti, yeni tur yok
+async function startRound(game, seats) {
+  // Parası biten botların yerine taze parayla yeni gangster botlar girer
+  await replenishBankruptBots(game, seats)
+
   return runTransaction(gRef(), g => {
     if (!g || g.phase !== 'result') return
-    g.round = (g.round || 1) + 1; g.bets = {}; g.segResult = null
-    g.phase = 'bet'; g.phaseUntil = now() + BET_S * 1000
+    g.round = (g.round || 1) + 1
+    g.bets = {}
+    g.segResult = null
+    g.winnerSeat = null
+    g.phase = 'bet'
+    g.phaseUntil = now() + BET_S * 1000
     return g
   })
 }

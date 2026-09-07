@@ -225,7 +225,193 @@ export const BOT_PERSONALITIES = {
         'Hedef tahtasında kim var bakalım bu el?'
       ]
     }
+  },
+  ramiz: {
+    id: 'ramiz',
+    name: 'RAMİZ DAYI',
+    title: 'Eski Toprak Kumarbaz',
+    avatar: '👑',
+    kellyMultiplier: 0.75,
+    tiltLossThreshold: 2,
+    favoriteClass: 11.64,
+    stealPreference: 0.20,
+    snipeUrgency: 0.50,
+    entrance: 'Mesele kazanmak değil yeğen, masada racon bırakmak! Açılın, Dayı oturdu!',
+    taunts: {
+      win: [
+        'Oyun bitti yeğenim, çipleri kasaya istifleyin!',
+        'Sadakat biterse, kumarhane devreye girer!',
+        'Raconu biz keseriz, parayı biz toplarız!',
+        'Gençler izlesin, Dayı ders veriyor.'
+      ],
+      loss: [
+        'Her kaybın bir bedeli vardır yeğen, hesap kapanmadı.',
+        'Çark döner, hesap döner, Dayı yine masaya çöker.',
+        'Kaybetmek bize koymaz, biz küllerimizden doğarız.'
+      ],
+      tilt: [
+        'Kaderle pazarlık olmaz yeğen, her şeyi x11\'e basıyorum!',
+        'Gözümüzü kararttık bir kere, bu masa ya bizim ya hiç kimsenin!'
+      ],
+      predatory: [
+        'Bakışların titriyor yeğen, çipleri bana bırak git dinlen.',
+        'Masada zaaf göstereni kurtlar değil, Dayı yer.'
+      ],
+      snipe: ['Hesabı son saniyede kestik yeğen, hayırlı olsun.'],
+      steal: ['Çipleri sessizce devraldık yeğenim, racondur.'],
+      bomb: ['Pimi çektiler yeğen, ama biz daha büyük patlayacağız.'],
+      chat: ['Kumar cesurların sofrasıdır, korkan kapı önünde beklesin.']
+    }
+  },
+  baron: {
+    id: 'baron',
+    name: 'BARON',
+    title: 'Kara Para Babası (Whale)',
+    avatar: '💼',
+    kellyMultiplier: 0.85,
+    tiltLossThreshold: 2,
+    favoriteClass: 11.64,
+    stealPreference: 0.30,
+    snipeUrgency: 0.60,
+    entrance: 'Çekilin lan fakirler! Masadaki tüm çipleri satın almaya geldim!',
+    taunts: {
+      win: [
+        'Para parayı çeker aslanım, tüm pot benim!',
+        'Bu masayı komple kapatıyorum, anahtarı verin!',
+        'Milyonlar akıyor, kuruşlarla oynayan kenara çekilsin!'
+      ],
+      loss: [
+        'Bozukluklar gitti, asıl cüzdanı şimdi açıyorum!',
+        'Kasadaki çerez parasıydı o, şimdi kasayı boşaltacağız.'
+      ],
+      tilt: [
+        'Tüm serveti masaya sürüyorum, kim karşıma çıkacak lan?!',
+        'Limit falan tanımam amk, masayı ezeceğim!'
+      ],
+      predatory: [
+        'Cebinde tek çip kalmadı dimi zibidi? Şimdi seni yutuyorum!',
+        'Paranın gücü karşısında diz çökeceksiniz.'
+      ],
+      snipe: ['Satın aldım potu, geçmiş olsun fukaralar.'],
+      steal: ['Parayı kokladım ve çektim, iş dünyası böyle yürür.'],
+      bomb: ['Bomba da patlasa zarar bize sinek ısırığı gelir.'],
+      chat: ['Bu masada dönen para benim puro param bile değil.']
+    }
+  },
+  jilet: {
+    id: 'jilet',
+    name: 'JİLET ALİ',
+    title: 'Sokak Gaspçısı',
+    avatar: '🔪',
+    kellyMultiplier: 0.90,
+    tiltLossThreshold: 1,
+    favoriteClass: 'S',
+    stealPreference: 0.80,
+    snipeUrgency: 0.70,
+    entrance: 'Kollayın cepleri lan! Jilet Ali masaya daldı, affı yok!',
+    taunts: {
+      win: [
+        'Jilet gibi kestik çipleri aldık eyvallah!',
+        'Burası arka sokak koçum, çipleri bırakıp yürüyeceksin!',
+        'Kimse Jilet\'in önünden çip kapamaz!'
+      ],
+      loss: [
+        'Kim soktu lan bu çomakları çarka?! Alayınızı deşeceğim!',
+        'Çipim gitti amk ama canınızı alırım!'
+      ],
+      tilt: [
+        'All-in lan all-in! Ya batarız ya bu kumarhaneyi yakarız!',
+        'Sikerim kuralını, son kuruşuna kadar basıyorum!'
+      ],
+      predatory: [
+        'Titremeye başladın dimi lan zibidi?! Ceplerini boşalt!',
+        'Gözünün feri söndü, donuna kadar alacağım senin!'
+      ],
+      snipe: ['Göz açıp kapayıncaya kadar cebinizdekileri aldım!'],
+      steal: ['Soygun dediğin böyle olur, helal edin koçlar!'],
+      bomb: ['Bombayı koyanı bulursam jiletlerim lan!'],
+      chat: ['Bu masada racon da benim kural da benim!']
+    }
+  },
+  civa: {
+    id: 'civa',
+    name: 'CİVA NEDİM',
+    title: 'Hızlı Scalper',
+    avatar: '⚡',
+    kellyMultiplier: 0.50,
+    tiltLossThreshold: 4,
+    favoriteClass: 2.33,
+    stealPreference: 0.40,
+    snipeUrgency: 0.80,
+    entrance: 'Gözlerinizi kırpmayın lan! Civa gibi akıp parayı toplayacağım!',
+    taunts: {
+      win: [
+        'Işık hızında vuruş, para kasada!',
+        'Hız her şeydir koçum, siz daha düşünürken ben kazandım!',
+        'Civa gibi sızdık, çipleri topladık.'
+      ],
+      loss: [
+        'Hız kesmek yok, sıradaki elde iki katıyla geliyorum!',
+        'Milro-saniye kaçtı, telafisi saniyeler sürer.'
+      ],
+      tilt: [
+        'Hızı 10x\'e alıyorum, durdurabilen gelsin lan!'
+      ],
+      predatory: [
+        'Sen daha jetonu atana kadar ben senin bakiyeni bitiririm!'
+      ],
+      snipe: ['Son milisaniyede girdim, pot cepte!'],
+      steal: ['Paranızı çaldığımı bile fark etmediniz dimi?'],
+      bomb: ['Hızlı giden atın bombası seyrek düşer, devam!'],
+      chat: ['Yavaş kalan bu masada aç kalır aslanım.']
+    }
+  },
+  azrail: {
+    id: 'azrail',
+    name: 'AZRAİL',
+    title: 'Kasa Celladı',
+    avatar: '☠️',
+    kellyMultiplier: 0.95,
+    tiltLossThreshold: 1,
+    favoriteClass: 11.64,
+    stealPreference: 0.30,
+    snipeUrgency: 0.90,
+    entrance: 'Masaya eceliniz geldi! Bakiyelerinizi sıfırlamaya yeminliyim!',
+    taunts: {
+      win: [
+        'Ruhunuzu ve çiplerinizi teslim aldım!',
+        'Kasa çöktü, Azrail tahsilatı yaptı!',
+        'Kaçış yoktu, sonuç belliydi.'
+      ],
+      loss: [
+        'Ölüm sadece ertelendi, sıradaki tur hepinizi alacağım!',
+        'Bu çark bana borçlandı, tahsilat kanlı olacak.'
+      ],
+      tilt: [
+        'Kıyamet koptu lan! Tüm serveti x11\'e vuruyorum!'
+      ],
+      predatory: [
+        'Son nefesini veriyorsun çaylak, Azrail geldi!',
+        'Bakiyen 0\'a kilitlendi, geçmiş olsun.'
+      ],
+      snipe: ['Vade doldu, son saniyede canınızı aldım.'],
+      steal: ['Çipleriniz ahirete intikal etti.'],
+      bomb: ['Patlama sadece ateşimizi körükler!'],
+      chat: ['Bu masadan ancak iflas edenler kalkabilir.']
+    }
   }
+}
+
+/**
+ * Boşalan veya parası biten koltuğa yeni yırtıcı bot üretir
+ */
+export function getFreshBotProfile(excludeNames = []) {
+  const allKeys = Object.keys(BOT_PERSONALITIES)
+  const availableKeys = allKeys.filter(k => !excludeNames.includes(BOT_PERSONALITIES[k].name))
+  const pickKey = availableKeys.length > 0
+    ? availableKeys[Math.floor(Math.random() * availableKeys.length)]
+    : allKeys[Math.floor(Math.random() * allKeys.length)]
+  return BOT_PERSONALITIES[pickKey]
 }
 
 export class BotBrain {

@@ -3,18 +3,26 @@ import {
   SEG, N_SEATS, SPIN_MS, useGame, hostSeat, initGameIfMissing,
   placeBet, clearMyBets, advancePhase, injectBotBets, resetGame,
   now, seatInfo, triggerSpinWithBet, log, sendPlayerTaunt,
+  forceReloadBots, replenishBankruptBots,
 } from './gameSync.js'
 import {
-  tick, bassDrop, bombSound, haptic, shake, spinningSound, clackSound,
+  tick, bassDrop, bombSound, shake, spinningSound, clackSound,
   cashRegisterSound, heartbeatSound, playAirhorn, playHeistSiren,
   playCoinCascade, speakStreetVoice, setVoiceMuted, getVoiceMuted,
 } from './core/juice.js'
+import { haptic } from './core/HapticEngine.js'
 import { rngEngine } from './core/RNGEngine.js'
 import { authoritativeClient } from './core/authoritativeClient.js'
 import { VisualFX } from './core/VisualFX.js'
 import { securityEngine } from './core/SecurityEngine.js'
 import ProvablyFairModal from './components/ProvablyFairModal.jsx'
 import CanvasWheel, { calculateTargetAngle } from './components/CanvasWheel.jsx'
+import ThreeWheel3D from './components/ThreeWheel3D.jsx'
+import ParallaxBackground from './components/ParallaxBackground.jsx'
+import Chip3DStack from './components/Chip3DStack.jsx'
+import LottieAnimationOverlay from './components/LottieAnimationOverlay.jsx'
+import { spawnWinParticles } from './core/PixiParticles.js'
+import { dynamicAudio } from './core/DynamicAudioEngine.js'
 import { walletManager } from './wallet.js'
 import { SpectatorCrowdEngine } from './core/spectatorCrowd.js'
 import { marketRateStreamer, getDynamicHouseEdge } from './economy.js'
@@ -28,6 +36,9 @@ const SEG_ANGLE = 360 / N // 30 derece
    (açısal hız ve sürtünme) ve 60/120 FPS sıfır frame-drop garantisi. */
 export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
   const game = useGame()
+  const [wheelMode, setWheelMode] = useState('3d') // '3d' | '2d'
+  const [lottieEvent, setLottieEvent] = useState(null)
+  const [isBgmActive, setIsBgmActive] = useState(false)
   const [chip, setChip] = useState(50)
   const [currentRotation, setCurrentRotation] = useState(0)
   const [isSpinning, setIsSpinning] = useState(false)
@@ -41,6 +52,14 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
   const [voiceEnabled, setVoiceEnabled] = useState(!getVoiceMuted())
   const [customTauntText, setCustomTauntText] = useState('')
   const [marketTicker, setMarketTicker] = useState({ tonPrice: 3.85, change24h: 0, spread: 4.5, status: 'connected' })
+
+  // İlk kullanıcı etkileşiminde Web Audio Arka Plan Müziği Motorunu Canlandır
+  const handleUserInteractAudio = useCallback(() => {
+    if (!isBgmActive) {
+      dynamicAudio.start()
+      setIsBgmActive(true)
+    }
+  }, [isBgmActive])
 
   const rotationRef = useRef(0)
   const lastSpunKeyRef = useRef('')
@@ -189,6 +208,10 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
     const spinVariant = abTestEngine.getVariant('exp_spin_speed', meName || 'guest')
     const dynamicSpinMs = spinVariant?.config?.spinDurationMs || SPIN_MS
 
+    // Web Audio Dinamik Müzik Motoru: Gerilim Arpej Fazına Geç
+    dynamicAudio.start()
+    dynamicAudio.setPhase('spinning')
+
     setIsSpinning(true)
     setActiveWinSeg(targetSegIndex)
     setCurrentRotation(finalAngle)
@@ -207,8 +230,9 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
       tickTimersRef.current.forEach(id => clearTimeout(id))
       tickTimersRef.current = []
 
-      // Çark durduğunda kilitlenme 'clack' sesi
+      // Çark durduğunda kilitlenme 'clack' sesi ve titreşim
       clackSound()
+      haptic('tick')
 
       // Near-Miss dopamin uyarısı
       if (isNearMiss) {
@@ -228,6 +252,8 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
         shake('extreme')
         VisualFX.triggerBombBlast(65)
         VisualFX.triggerChromaticAberration(700)
+        setLottieEvent({ type: 'bomb', text: 'BOMBA PATLADI! 💥' })
+        dynamicAudio.setPhase('idle')
         speakStreetVoice('Bombayı koyanın ta amına koyayım, masa patladı!', 'kurt')
         if (spectatorEngineRef.current) spectatorEngineRef.current.reactToGameEvent('bomb_hit')
       } else if (landedSeg.t === 'S') {
@@ -237,6 +263,8 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
         VisualFX.triggerStealVortex(55)
         VisualFX.triggerChromaticAberration(500)
         VisualFX.triggerHeistSplash('POT', 'Tilki')
+        setLottieEvent({ type: 'win', text: 'TİLKİ POTU SOYDU! 🦊' })
+        dynamicAudio.setPhase('idle')
         speakStreetVoice('Ceplerinizi boşaltın lan, Tilki geldi soydu!', 'tilki')
         if (spectatorEngineRef.current) spectatorEngineRef.current.reactToGameEvent('steal_hit')
       } else if (typeof landedSeg.t === 'number' && landedSeg.t >= 5) {
@@ -248,24 +276,32 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
         shake('heavy')
         VisualFX.triggerCoinExplosion(90, `x${landedSeg.t} JACKPOT!`)
         VisualFX.triggerNeonTracerBeams('#ffd700')
+        spawnWinParticles('jackpot', 160)
+        dynamicAudio.setPhase('jackpot')
         if (spectatorEngineRef.current) spectatorEngineRef.current.reactToGameEvent('win_huge')
         if (mySeatBet > 0) {
           const winTot = mySeatBet * landedSeg.t
           VisualFX.triggerVictorySplash('DEVASA KAZANÇ', winTot, `x${landedSeg.t} ÇARPAN İLE SOYGUN TAMAMLANDI!`)
+          setLottieEvent({ type: 'win', text: `x${landedSeg.t} DEVASA VURGUN!`, amount: winTot })
           speakStreetVoice('Parayı kokladım mı affetmem amına koyayım, hepsi benim!', 'vega')
         } else {
+          setLottieEvent({ type: 'win', text: `x${landedSeg.t} JACKPOT PATLADI!` })
           speakStreetVoice(`Masa alev aldı, x${landedSeg.t} patladı!`, 'announcer')
         }
       } else {
         cashRegisterSound()
         haptic('win')
         shake('medium')
+        dynamicAudio.setPhase('win')
         if (typeof landedSeg.t === 'number' && landedSeg.t > 0) {
           playCoinCascade(6)
           VisualFX.triggerCoinExplosion(45, `x${landedSeg.t} KAZANÇ`)
           VisualFX.triggerNeonTracerBeams(landedSeg.c || '#ffd700')
+          spawnWinParticles('gold_shower', 90)
           if (mySeatBet > 0) {
-            VisualFX.triggerVictorySplash('KAZANDIN!', mySeatBet * landedSeg.t, 'KASAYI VURDUN, DEVAM ET!')
+            const winTot = mySeatBet * landedSeg.t
+            VisualFX.triggerVictorySplash('KAZANDIN!', winTot, 'KASAYI VURDUN, DEVAM ET!')
+            setLottieEvent({ type: 'win', text: `x${landedSeg.t} KAZANÇ!`, amount: winTot })
             speakStreetVoice('Temiz vuruş, para akıyor!', 'vega')
           }
         }
@@ -467,12 +503,69 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
   const totalMyBet = Object.values(myBets).reduce((a, b) => a + b, 0)
 
   return (
-    <div className="wheelwrap">
-      {/* Üst Bilgi ve Ses Kontrolleri */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', maxWidth: '420px', padding: '0 4px' }}>
+    <div className="wheelwrap" onClick={handleUserInteractAudio}>
+      {/* 🌌 Fare ve Jiroskop Hareketli Dinamik Parallax Arka Plan */}
+      <ParallaxBackground />
+
+      {/* 🏆 Lottie Vektörel Kutlama / Bomba / Kayıp Katmanı */}
+      <LottieAnimationOverlay
+        type={lottieEvent?.type}
+        text={lottieEvent?.text}
+        amount={lottieEvent?.amount}
+        onComplete={() => setLottieEvent(null)}
+      />
+
+      {/* 🧭 Üst Bilgi Barı: 3D Mod / BGM / Racon Ses / Tur */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', maxWidth: '420px', padding: '0 4px', flexWrap: 'wrap', gap: '6px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontSize: '0.72rem', color: '#ffd700', fontWeight: 800 }}>⚡ 60 FPS ULTRA CANVAS</span>
+          {/* 3D / 2D Görünüm Seçici */}
+          <button
+            className="btn ghost sm"
+            style={{
+              padding: '2px 8px',
+              fontSize: '0.68rem',
+              borderColor: wheelMode === '3d' ? '#ffd700' : '#475569',
+              color: wheelMode === '3d' ? '#ffd700' : '#94a3b8',
+              background: wheelMode === '3d' ? 'rgba(255, 215, 0, 0.15)' : 'transparent',
+              fontWeight: 800,
+            }}
+            onClick={(e) => {
+              e.stopPropagation()
+              setWheelMode(wheelMode === '3d' ? '2d' : '3d')
+              haptic('tick')
+            }}
+          >
+            {wheelMode === '3d' ? '🌐 3D THREE.JS' : '🎯 2D CANVAS'}
+          </button>
+
+          {/* Web Audio Dinamik Müzik */}
+          <button
+            className="btn ghost sm"
+            style={{
+              padding: '2px 8px',
+              fontSize: '0.68rem',
+              borderColor: isBgmActive ? '#00e575' : '#475569',
+              color: isBgmActive ? '#00e575' : '#94a3b8',
+              background: isBgmActive ? 'rgba(0, 229, 117, 0.12)' : 'transparent',
+              fontWeight: 800,
+            }}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (!isBgmActive) {
+                dynamicAudio.start()
+                setIsBgmActive(true)
+              } else {
+                const nextMute = !dynamicAudio.isMuted
+                dynamicAudio.setMuted(nextMute)
+                setIsBgmActive(!nextMute)
+              }
+              haptic('tick')
+            }}
+          >
+            {isBgmActive ? '🎵 BGM: AÇIK' : '🔇 BGM: KAPALI'}
+          </button>
         </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
             className="btn ghost sm"
@@ -484,11 +577,13 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
               background: voiceEnabled ? 'rgba(0,229,117,0.1)' : 'transparent',
               fontWeight: 800,
             }}
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation()
               const next = !voiceEnabled
               setVoiceEnabled(next)
               setVoiceMuted(!next)
               if (next) speakStreetVoice('Racon modu aktif, ses ver!', 'vega')
+              haptic('tick')
             }}
           >
             {voiceEnabled ? '🔊 SES: AÇIK' : '🔇 SES: KAPALI'}
@@ -528,24 +623,35 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
         </div>
       </div>
 
-      {/* Yüksek Performanslı Tek Context 2D Canvas Çark Sahnesi */}
+      {/* Çark Sahnesi: Three.js 3D WebGL veya 2D Canvas */}
       <div className="wheel-stage" style={{ minHeight: '360px', position: 'relative' }}>
-        {/* Yüksek Performanslı Canvas Çark (Single-Context requestAnimationFrame & Physics Loop) */}
-        <CanvasWheel
-          isSpinning={isSpinning}
-          targetAngle={currentRotation}
-          activeWinSeg={activeWinSeg}
-          myBets={myBets}
-          centerLabel={centerDisplayLabel}
-          centerSub={`TUR ${game.round || 1} · POT ${game.pot || 0}`}
-          onSelectSegment={(segIdx) => handlePlaceBet(segIdx, false)}
-          spinDurationMs={SPIN_MS}
-          onIndicatedSegmentChange={(idx) => setLiveIndicatedSeg(idx)}
-          onPointerFlick={() => {
-            setPointerFlick(true)
-            setTimeout(() => setPointerFlick(false), 90)
-          }}
-        />
+        {wheelMode === '3d' ? (
+          <ThreeWheel3D
+            rotationAngle={currentRotation}
+            isSpinning={isSpinning}
+            activeWinSeg={activeWinSeg}
+            onPointerTick={() => {
+              haptic('tick')
+              tick()
+            }}
+          />
+        ) : (
+          <CanvasWheel
+            isSpinning={isSpinning}
+            targetAngle={currentRotation}
+            activeWinSeg={activeWinSeg}
+            myBets={myBets}
+            centerLabel={centerDisplayLabel}
+            centerSub={`TUR ${game.round || 1} · POT ${game.pot || 0}`}
+            onSelectSegment={(segIdx) => handlePlaceBet(segIdx, false)}
+            spinDurationMs={SPIN_MS}
+            onIndicatedSegmentChange={(idx) => setLiveIndicatedSeg(idx)}
+            onPointerFlick={() => {
+              setPointerFlick(true)
+              setTimeout(() => setPointerFlick(false), 90)
+            }}
+          />
+        )}
       </div>
 
       <div className={`statusband ${band[0]}`}>
@@ -559,7 +665,7 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
         </div>
       )}
 
-      {/* Bahis & Çip Kontrolleri */}
+      {/* Bahis & Çip Kontrolleri (3D Katmanlı Çip Yığını) */}
       <div className="controls">
         <span style={{ fontSize: '0.75rem', color: 'var(--dim)', marginRight: '4px', fontWeight: '700' }}>
           ÇİP:
@@ -569,15 +675,25 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
             key={c}
             className={`chip c${c} ${chip === c ? 'sel' : ''}`}
             onClick={() => { setChip(c); haptic('bet'); tick() }}
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}
           >
             {c}
           </div>
         ))}
+
+        {/* Seçili Çipin 3D İzometrik Yığını */}
+        <div style={{ marginLeft: '4px', marginRight: '4px' }}>
+          <Chip3DStack amount={chip * 3} chipValue={chip} />
+        </div>
+
         {seat >= 0 && (
           <button
             className="btn ghost"
             disabled={isSpinning || totalMyBet === 0}
-            onClick={() => clearMyBets(seat)}
+            onClick={() => {
+              clearMyBets(seat)
+              haptic('clear')
+            }}
           >
             Temizle
           </button>
@@ -591,10 +707,14 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
               color: '#000',
               fontWeight: '900',
               boxShadow: '0 0 16px rgba(255, 215, 0, 0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
             }}
             onClick={handleSpinNow}
           >
-            ⚡ ÇARKI ÇEVİR ({totalMyBet} Çip)
+            <Chip3DStack amount={totalMyBet} chipValue={chip} />
+            <span>⚡ ÇARKI ÇEVİR ({totalMyBet} Çip)</span>
           </button>
         )}
       </div>
@@ -684,7 +804,7 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
       {/* Masa Koltukları & Canlı Bot Psikolojisi */}
       <div className="seatgrid">
         {Array.from({ length: N_SEATS }, (_, i) => {
-          const p = seatInfo(i, seats)
+          const p = seatInfo(i, seats, game)
           const botState = game.botStates?.[i]
           const isTilt = botState?.isTilt
           const isSniper = botState?.isSniper
@@ -716,8 +836,9 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
               <div className="slike">🪙 {game.chips?.[i] ?? 0}</div>
               <div className="bets">
                 {Object.entries(game.bets?.[i] || {}).map(([sg, v]) => (
-                  <span key={sg} className="pb">
-                    {SEG[sg]?.l}·{v}
+                  <span key={sg} className="pb" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                    <Chip3DStack amount={v} chipValue={50} />
+                    <span>{SEG[sg]?.l}·{v}</span>
                   </span>
                 ))}
               </div>
@@ -812,20 +933,55 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
         </div>
       </div>
 
-      <button className="btn ghost" onClick={resetGame}>
-        ↺ Masayı Sıfırla
-      </button>
+      {/* Masa Eylemleri (Sıfırla & Taze Botlar Çağır) */}
+      <div style={{ display: 'flex', gap: '8px', width: '100%', maxWidth: '420px', justifyContent: 'center', marginTop: '6px' }}>
+        <button
+          className="btn"
+          style={{
+            background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)',
+            color: '#fff',
+            fontWeight: 800,
+            fontSize: '0.78rem',
+            padding: '8px 14px',
+            border: 'none',
+            borderRadius: '6px',
+            boxShadow: '0 0 12px rgba(16, 185, 129, 0.4)',
+          }}
+          onClick={() => {
+            forceReloadBots(game, seats)
+            haptic('win')
+          }}
+        >
+          🔥 Masaya Taze Kumarbazlar Çağır (Paralı Botlar)
+        </button>
+
+        <button className="btn ghost" onClick={resetGame} style={{ fontSize: '0.78rem', padding: '8px 12px' }}>
+          ↺ Masayı Sıfırla
+        </button>
+      </div>
 
       {/* Kazanan Kartı */}
       {game.winnerSeat != null && (
         <div className="winner">
           <div className="card">
-            <h2>{seatInfo(game.winnerSeat, seats).ava} {seatInfo(game.winnerSeat, seats).name} KAZANDI</h2>
+            <h2>{seatInfo(game.winnerSeat, seats, game).ava} {seatInfo(game.winnerSeat, seats, game).name} KAZANDI</h2>
             <p>Masadaki herkesi soydu.</p>
             <p style={{ marginTop: 10, color: 'var(--gold2)' }}>{game.chips?.[game.winnerSeat]} chip</p>
-            <button className="btn" style={{ marginTop: 16 }} onClick={resetGame}>
-              Tekrar Oyna
-            </button>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: 16 }}>
+              <button
+                className="btn"
+                style={{ background: 'var(--gold)', color: '#000', fontWeight: 900 }}
+                onClick={() => {
+                  forceReloadBots(game, seats)
+                  haptic('win')
+                }}
+              >
+                🔥 Yeni Rakiplerle Devam Et
+              </button>
+              <button className="btn ghost" onClick={resetGame}>
+                Masayı Sıfırla
+              </button>
+            </div>
           </div>
         </div>
       )}
