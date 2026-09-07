@@ -5,16 +5,21 @@ import { abTestEngine, EXPERIMENTS } from '../core/ABTestFeatureFlag.js'
 import { TaxReportEngine, TAX_JURISDICTIONS } from '../core/TaxReportEngine.js'
 import { STORE_COMPLIANCE } from '../core/StoreSubmissionKit.js'
 import { marketRateStreamer, getDynamicHouseEdge } from '../economy.js'
-import { revenueTracker, realTimeRevenueDashboard } from '../core/revenueTracker.js'
+import { revenueTracker, realTimeRevenueDashboard, calculatePlayerLifetimeValue } from '../core/revenueTracker.js'
 
 export default function RealTimeRevenueDashboard({ isOpen, onClose, gameData, econData }) {
-  const [activeTab, setActiveTab] = useState('overview') // overview | ledger | ltv_churn | ab_testing | tax_report | store_submission
+  const [activeTab, setActiveTab] = useState('overview') // overview | player_ltv | ledger | ltv_churn | ab_testing | tax_report | store_submission
   const [selectedJurisdiction, setSelectedJurisdiction] = useState('CURACAO_GCB')
   const [marketState, setMarketState] = useState(marketRateStreamer.getMarketState())
   const [abOverrides, setAbOverrides] = useState(abTestEngine.overrides)
   const [downloadSuccess, setDownloadSuccess] = useState('')
   const [revenueStats, setRevenueStats] = useState(revenueTracker.getStats())
   const [ledgerEntries, setLedgerEntries] = useState(revenueTracker.getLedger())
+
+  // Oyuncu LTV Arama ve Hesaplama State'i
+  const [searchUid, setSearchUid] = useState('user_ton_8892')
+  const [searchedLtvData, setSearchedLtvData] = useState(null)
+  const [isSearchingLtv, setIsSearchingLtv] = useState(false)
 
   useEffect(() => {
     const unsubMarket = marketRateStreamer.subscribe(state => setMarketState(state))
@@ -28,17 +33,32 @@ export default function RealTimeRevenueDashboard({ isOpen, onClose, gameData, ec
     }
   }, [])
 
+  // İlk yüklemede varsayılan LTV hesapla
+  useEffect(() => {
+    if (isOpen && !searchedLtvData) {
+      calculatePlayerLifetimeValue(searchUid, { isWhale: true }).then(data => setSearchedLtvData(data))
+    }
+  }, [isOpen, searchUid, searchedLtvData])
+
   if (!isOpen) return null
 
   // Finansal Rakamlar (Canlı Defter + Firebase Verisi)
   const totalWagered = revenueStats.totalWageredChips || (econData?.paid_chips ? (econData.paid_chips * 1.85) : 148500)
   const totalPaidOut = revenueStats.totalPaidOutChips || (econData?.paid_chips ? (econData.paid_chips * 1.78) : 142200)
   const prizePool = econData?.prize_pool || 6400
+  const jackpotPool = 12500
   const totalRevenueChips = revenueStats.netRevenueChips || (econData?.revenue_chips || 12800)
+  const totalRakeChips = revenueStats.totalRakeChips || Math.round(totalWagered * 0.035)
+
+  const chipUsd = marketState.dynamicChipUsd || 0.01
+  const liveNetRevenueUSD = parseFloat((totalRevenueChips * chipUsd).toFixed(2))
+  const totalRakeUSD = parseFloat((totalRakeChips * chipUsd).toFixed(2))
+  const totalPoolLiquidityChips = prizePool + jackpotPool + totalRevenueChips
+  const totalPoolLiquidityUSD = parseFloat((totalPoolLiquidityChips * chipUsd).toFixed(2))
 
   const rtp = FinancialMetricsEngine.calculateRTP(totalWagered, totalPaidOut)
   const houseEdge = FinancialMetricsEngine.calculateHouseEdge(rtp)
-  const solvency = FinancialMetricsEngine.calculateSolvencyRatio(prizePool, gameData?.pot || 800)
+  const solvency = FinancialMetricsEngine.calculateSolvencyRatio(totalPoolLiquidityChips, gameData?.pot || 800)
 
   // Örnek Oyuncu Kohort LTV Analizi
   const sampleWhaleLtv = AnalyticsEngine.calculatePlayerLifetimeValue({
@@ -56,6 +76,18 @@ export default function RealTimeRevenueDashboard({ isOpen, onClose, gameData, ec
     daysActive: 8,
     isWalletVerified: false,
   }, houseEdge / 100)
+
+  const handleRunLtvSearch = async (targetUid) => {
+    setIsSearchingLtv(true)
+    const uidToSearch = targetUid || searchUid
+    const result = await calculatePlayerLifetimeValue(uidToSearch, {
+      isWhale: uidToSearch.includes('whale') || uidToSearch.includes('8892'),
+      sessionWagered: uidToSearch.includes('whale') ? 62000 : 8500,
+      sessionWon: uidToSearch.includes('whale') ? 48000 : 7900,
+    })
+    setSearchedLtvData(result)
+    setIsSearchingLtv(false)
+  }
 
   const taxReport = TaxReportEngine.generateTaxReportData({
     totalWagered,
@@ -82,17 +114,20 @@ export default function RealTimeRevenueDashboard({ isOpen, onClose, gameData, ec
     <div className="financial-modal-backdrop" onClick={onClose}>
       <div
         className="financial-modal-content"
-        style={{ maxWidth: '820px', maxHeight: '90vh', overflowY: 'auto' }}
+        style={{ maxWidth: '860px', maxHeight: '90vh', overflowY: 'auto' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Başlık ve Kapat Butonu */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #2a3346', paddingBottom: '12px' }}>
           <div>
-            <div style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--gold)' }}>
-              ⚡ MERKEZİ KASA & HASILAT YÖNETİM PANELİ
+            <div style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--gold)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>⚡ MERKEZİ KASA & HASILAT YÖNETİM PANELİ (ADMIN)</span>
+              <span style={{ fontSize: '0.65rem', background: '#00c26e22', color: '#00e575', padding: '2px 6px', borderRadius: '4px', border: '1px solid #00c26e' }}>
+                CANLI OTORİTE
+              </span>
             </div>
             <div style={{ fontSize: '0.72rem', color: 'var(--dim)', marginTop: '2px' }}>
-              Real-time GGR, LTV Modelleri, A/B Testing, Vergi CSV & Store Submission
+              Real-time Net Revenue, Rake, Havuz Likiditesi, LTV Motoru, A/B Testing & Vergi CSV
             </div>
           </div>
           <button className="btn ghost" style={{ padding: '4px 10px', fontSize: '0.8rem' }} onClick={onClose}>
@@ -103,9 +138,10 @@ export default function RealTimeRevenueDashboard({ isOpen, onClose, gameData, ec
         {/* Tab Menüsü */}
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '12px', borderBottom: '1px solid #1f2737', paddingBottom: '8px' }}>
           {[
-            { id: 'overview', label: '📊 Canlı Hasılat & GGR' },
+            { id: 'overview', label: '📊 Canlı Hasılat & Likidite' },
+            { id: 'player_ltv', label: '👑 Oyuncu LTV Denetimi' },
             { id: 'ledger', label: '💸 Anlık Gelir/Gider Defteri' },
-            { id: 'ltv_churn', label: '🧠 LTV & Churn Modelleri' },
+            { id: 'ltv_churn', label: '🧠 Kohort Modelleri' },
             { id: 'ab_testing', label: '🧪 A/B Testing Motoru' },
             { id: 'tax_report', label: '📑 Vergi Raporu (CSV)' },
             { id: 'store_submission', label: '📱 Store Submission Paketi' },
@@ -128,9 +164,87 @@ export default function RealTimeRevenueDashboard({ isOpen, onClose, gameData, ec
           ))}
         </div>
 
-        {/* 1. SEKME: CANLI HASILAT & GGR */}
+        {/* 1. SEKME: CANLI HASILAT, RAKE & HAVUZ LİKİDİTESİ (OVERVIEW) */}
         {activeTab === 'overview' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '14px' }}>
+            
+            {/* 🌟 3 BÜYÜK ANA FİNANSAL SÜTUN */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+              
+              {/* 1. CANLI NET GELİR (LIVE NET REVENUE) */}
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(0, 229, 117, 0.08), rgba(18, 23, 34, 0.95))',
+                border: '1px solid #00c26e',
+                borderRadius: '8px',
+                padding: '12px',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 800 }}>🟢 CANLI NET GELİR (GGR)</span>
+                  <span style={{ fontSize: '0.65rem', color: '#00e575', background: 'rgba(0,229,117,0.15)', padding: '2px 5px', borderRadius: '4px' }}>
+                    Hold: %{revenueStats.holdPercentage || 4.42}
+                  </span>
+                </div>
+                <div style={{ fontSize: '1.45rem', fontWeight: 900, color: '#00e575', marginTop: '6px' }}>
+                  ${liveNetRevenueUSD.toLocaleString()}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#cbd5e1', marginTop: '2px' }}>
+                  <strong>{totalRevenueChips.toLocaleString()}</strong> Çip Net Kasa Kârı
+                </div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--dim)', marginTop: '6px', borderTop: '1px solid #1f2737', paddingTop: '4px' }}>
+                  Hız: +{revenueStats.hourlyInflowChips || 1800} Çip/saat akış
+                </div>
+              </div>
+
+              {/* 2. TOPLANAN TOPLAM RAKE (TOTAL RAKE COLLECTED) */}
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(245, 179, 1, 0.08), rgba(18, 23, 34, 0.95))',
+                border: '1px solid #f5b301',
+                borderRadius: '8px',
+                padding: '12px',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 800 }}>💰 TOPLANAN TOPLAM RAKE</span>
+                  <span style={{ fontSize: '0.65rem', color: '#ffd700', background: 'rgba(245,179,1,0.15)', padding: '2px 5px', borderRadius: '4px' }}>
+                    Rake: %3.50
+                  </span>
+                </div>
+                <div style={{ fontSize: '1.45rem', fontWeight: 900, color: '#ffd700', marginTop: '6px' }}>
+                  ${totalRakeUSD.toLocaleString()}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#cbd5e1', marginTop: '2px' }}>
+                  <strong>{totalRakeChips.toLocaleString()}</strong> Çip Otomatik Komisyon
+                </div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--dim)', marginTop: '6px', borderTop: '1px solid #1f2737', paddingTop: '4px' }}>
+                  Masadaki her kazanan pottan kesilen garantili marj
+                </div>
+              </div>
+
+              {/* 3. KASA HAVUZ LİKİDİTESİ (CURRENT POOL LIQUIDITY) */}
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(167, 139, 250, 0.08), rgba(18, 23, 34, 0.95))',
+                border: '1px solid #a78bfa',
+                borderRadius: '8px',
+                padding: '12px',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 800 }}>🏦 KASA HAVUZ LİKİDİTESİ</span>
+                  <span style={{ fontSize: '0.65rem', color: '#a78bfa', background: 'rgba(167,139,250,0.15)', padding: '2px 5px', borderRadius: '4px' }}>
+                    %{solvency.ratio} Solvency
+                  </span>
+                </div>
+                <div style={{ fontSize: '1.45rem', fontWeight: 900, color: '#c084fc', marginTop: '6px' }}>
+                  ${totalPoolLiquidityUSD.toLocaleString()}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#cbd5e1', marginTop: '2px' }}>
+                  <strong>{totalPoolLiquidityChips.toLocaleString()}</strong> Çip Toplam Teminat
+                </div>
+                <div style={{ fontSize: '0.65rem', color: '#00e575', marginTop: '6px', borderTop: '1px solid #1f2737', paddingTop: '4px' }}>
+                  {solvency.statusText} (Ödül + Jackpot Havuzu)
+                </div>
+              </div>
+
+            </div>
+
             {/* Canlı Piyasa & Likidite Ticker */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
               <div style={{ background: '#121722', border: '1px solid #232d40', borderRadius: '8px', padding: '10px' }}>
@@ -142,11 +256,11 @@ export default function RealTimeRevenueDashboard({ isOpen, onClose, gameData, ec
               </div>
 
               <div style={{ background: '#121722', border: '1px solid #232d40', borderRadius: '8px', padding: '10px' }}>
-                <div style={{ fontSize: '0.68rem', color: 'var(--dim)' }}>BRÜT OYUN HASILATI (GGR)</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#00c26e' }}>
-                  ${((totalWagered - totalPaidOut) * 0.01).toFixed(2)}
+                <div style={{ fontSize: '0.68rem', color: 'var(--dim)' }}>TOPLAM CİRO (TURNOVER)</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff' }}>
+                  {totalWagered.toLocaleString()} Çip
                 </div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--dim)' }}>{totalWagered - totalPaidOut} Çip Net Kasa Karı</div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--dim)' }}>${(totalWagered * chipUsd).toFixed(2)} Bahis Hacmi</div>
               </div>
 
               <div style={{ background: '#121722', border: '1px solid #232d40', borderRadius: '8px', padding: '10px' }}>
@@ -158,9 +272,11 @@ export default function RealTimeRevenueDashboard({ isOpen, onClose, gameData, ec
               </div>
 
               <div style={{ background: '#121722', border: '1px solid #232d40', borderRadius: '8px', padding: '10px' }}>
-                <div style={{ fontSize: '0.68rem', color: 'var(--dim)' }}>KASA TEMİNATI (SOLVENCY)</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#a78bfa' }}>%{solvency.ratio}</div>
-                <div style={{ fontSize: '0.65rem', color: '#00c26e' }}>{solvency.statusText}</div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--dim)' }}>NET KASA NAKİT AKIŞI</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: revenueStats.netProfitUSD >= 0 ? '#00e575' : '#ef4444' }}>
+                  ${revenueStats.netProfitUSD}
+                </div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--dim)' }}>Yatırım - Çekim - Maliyet</div>
               </div>
             </div>
 
@@ -173,8 +289,218 @@ export default function RealTimeRevenueDashboard({ isOpen, onClose, gameData, ec
                 <span>Masa Turu: <strong style={{ color: '#fff' }}>Tur #{gameData?.round || 1}</strong></span>
                 <span>Masadaki Canlı Pot: <strong style={{ color: '#ffd700' }}>{gameData?.pot || 0} Çip</strong></span>
                 <span>Ortak Havuz: <strong style={{ color: '#00c26e' }}>{prizePool} Çip</strong></span>
+                <span>Jackpot Rezervi: <strong style={{ color: '#a78bfa' }}>{jackpotPool} Çip</strong></span>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* 2. SEKME: OYUNCU LTV DENETİMİ (CALCULATE PLAYER LIFETIME VALUE) */}
+        {activeTab === 'player_ltv' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '14px' }}>
+            <div style={{ background: '#0e131d', border: '1px solid #232d40', borderRadius: '8px', padding: '12px' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#ffd700', marginBottom: '4px' }}>
+                👑 `calculatePlayerLifetimeValue(uid)` - "BU ADAM BİZE NE KAZANDIRDI?"
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--dim)', marginBottom: '10px' }}>
+                İstediğin oyuncunun cüzdan/kullanıcı kimliğini gir; bıraktığı net kârı, toplanan rake'i, VIP segmentini ve kartel aksiyon tavsiyesini anında hesapla.
+              </div>
+
+              {/* Hızlı Seçim Butonları */}
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                {[
+                  { label: '🐋 Balina (#whale_8892)', uid: 'user_ton_whale_8892' },
+                  { label: '🦈 High-Roller (#shark_4102)', uid: 'user_evm_shark_4102' },
+                  { label: '🎯 Müdavim (#regular_304)', uid: 'user_ton_regular_304' },
+                  { label: '🐣 Çaylak (#rookie_19)', uid: 'user_rookie_19' },
+                ].map(preset => (
+                  <button
+                    key={preset.uid}
+                    className="btn"
+                    style={{
+                      fontSize: '0.68rem',
+                      padding: '3px 8px',
+                      background: searchUid === preset.uid ? '#ffd70022' : '#161d2a',
+                      color: searchUid === preset.uid ? '#ffd700' : '#94a3b8',
+                      border: '1px solid #2a3346',
+                    }}
+                    onClick={() => {
+                      setSearchUid(preset.uid)
+                      handleRunLtvSearch(preset.uid)
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Arama Inputu */}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  value={searchUid}
+                  onChange={e => setSearchUid(e.target.value)}
+                  placeholder="Kullanıcı UID veya Cüzdan ID girin..."
+                  style={{
+                    flex: 1,
+                    background: '#121722',
+                    border: '1px solid #2a3346',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    padding: '8px 12px',
+                    fontSize: '0.78rem',
+                  }}
+                />
+                <button
+                  className="btn"
+                  style={{
+                    background: '#ffd700',
+                    color: '#000',
+                    fontWeight: 800,
+                    fontSize: '0.75rem',
+                    padding: '8px 16px',
+                  }}
+                  onClick={() => handleRunLtvSearch()}
+                  disabled={isSearchingLtv}
+                >
+                  {isSearchingLtv ? '⏳ Hesaplanıyor...' : '🔍 LTV & Kârı Hesapla'}
+                </button>
+              </div>
+            </div>
+
+            {/* LTV Hesaplama Sonuç Kartı */}
+            {searchedLtvData && (
+              <div style={{
+                background: '#121722',
+                border: `1px solid ${searchedLtvData.whaleTier.includes('MEGA') ? '#00e575' : '#f5b301'}`,
+                borderRadius: '8px',
+                padding: '14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}>
+                {/* Üst Başlık & VIP Rozeti */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1f2737', paddingBottom: '8px' }}>
+                  <div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 900, color: '#fff' }}>
+                      {searchedLtvData.whaleBadge} {searchedLtvData.displayName}
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--dim)' }}>
+                      UID: <code>{searchedLtvData.uid}</code>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <span style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 800,
+                      background: 'rgba(0, 229, 117, 0.15)',
+                      color: '#00e575',
+                      border: '1px solid #00e575',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                    }}>
+                      {searchedLtvData.whaleTier}
+                    </span>
+                    <span style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 800,
+                      background: searchedLtvData.churnRiskLevel.includes('KRİTİK') ? 'rgba(239, 68, 68, 0.2)' : 'rgba(56, 189, 248, 0.15)',
+                      color: searchedLtvData.churnRiskLevel.includes('KRİTİK') ? '#ef4444' : '#38bdf8',
+                      border: `1px solid ${searchedLtvData.churnRiskLevel.includes('KRİTİK') ? '#ef4444' : '#38bdf8'}`,
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                    }}>
+                      Risk: %{searchedLtvData.churnRiskPercent} ({searchedLtvData.churnRiskLevel})
+                    </span>
+                  </div>
+                </div>
+
+                {/* 4 Ana LTV İstatistiği */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
+                  
+                  {/* Kasanın Bu Adamdan Kazandığı Net Para */}
+                  <div style={{ background: '#0a0e17', border: '1px solid #1f2737', borderRadius: '6px', padding: '10px' }}>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--dim)' }}>KASANIN BU ADAMDAN KÂRI (GGR)</div>
+                    <div style={{
+                      fontSize: '1.25rem',
+                      fontWeight: 900,
+                      color: searchedLtvData.netHouseProfitChips >= 0 ? '#00e575' : '#ef4444',
+                      marginTop: '2px',
+                    }}>
+                      {searchedLtvData.netHouseProfitChips >= 0 ? '+' : ''}${searchedLtvData.netHouseProfitUSD}
+                    </div>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--dim)' }}>
+                      {searchedLtvData.netHouseProfitChips >= 0 ? '+' : ''}{searchedLtvData.netHouseProfitChips.toLocaleString()} Çip Net
+                    </div>
+                  </div>
+
+                  {/* Toplanan Rake */}
+                  <div style={{ background: '#0a0e17', border: '1px solid #1f2737', borderRadius: '6px', padding: '10px' }}>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--dim)' }}>KESİLEN TOPLAM RAKE</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#ffd700', marginTop: '2px' }}>
+                      ${searchedLtvData.totalRakeCollectedUSD}
+                    </div>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--dim)' }}>
+                      {searchedLtvData.totalRakeCollectedChips.toLocaleString()} Çip (%3.5 Sabit)
+                    </div>
+                  </div>
+
+                  {/* Toplam Bahis Cirosu */}
+                  <div style={{ background: '#0a0e17', border: '1px solid #1f2737', borderRadius: '6px', padding: '10px' }}>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--dim)' }}>TOPLAM BAHİS CİROSU</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#38bdf8', marginTop: '2px' }}>
+                      ${searchedLtvData.totalWageredUSD}
+                    </div>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--dim)' }}>
+                      {searchedLtvData.totalWageredChips.toLocaleString()} Çip ({searchedLtvData.gamesPlayed} El)
+                    </div>
+                  </div>
+
+                  {/* Gelecek 30 Günlük LTV Projeksiyonu */}
+                  <div style={{ background: '#0a0e17', border: '1px solid #1f2737', borderRadius: '6px', padding: '10px' }}>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--dim)' }}>BEKLENEN 30G LTV</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#a78bfa', marginTop: '2px' }}>
+                      ${searchedLtvData.projected30DayLTV_USD}
+                    </div>
+                    <div style={{ fontSize: '0.65rem', color: '#00e575' }}>
+                      Kasa Marjı: %{searchedLtvData.houseMarginPercent}
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Sokak & Kartel Aksiyon Tavsiyesi */}
+                <div style={{
+                  background: 'rgba(245, 179, 1, 0.08)',
+                  border: '1px solid rgba(245, 179, 1, 0.4)',
+                  borderRadius: '6px',
+                  padding: '10px',
+                }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#ffd700', marginBottom: '2px' }}>
+                    🎯 SOKAK GİRİŞİMCİSİ TAKTİKSEL AKSİYON PLANI:
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: '#fff', lineHeight: 1.4 }}>
+                    {searchedLtvData.actionRecommendation}
+                  </div>
+                </div>
+
+                {/* Konsol & JSON Kopyalama */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.68rem', color: 'var(--dim)' }}>
+                  <span>Konsolda test etmek için: <code>calculatePlayerLifetimeValue('{searchedLtvData.uid}')</code></span>
+                  <button
+                    className="btn ghost"
+                    style={{ fontSize: '0.65rem', padding: '2px 8px' }}
+                    onClick={() => {
+                      navigator.clipboard?.writeText(JSON.stringify(searchedLtvData, null, 2))
+                      setDownloadSuccess('📋 LTV verisi panoya kopyalandı!')
+                      setTimeout(() => setDownloadSuccess(''), 3000)
+                    }}
+                  >
+                    📋 JSON Kopyala
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

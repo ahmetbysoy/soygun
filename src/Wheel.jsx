@@ -23,11 +23,16 @@ import Chip3DStack from './components/Chip3DStack.jsx'
 import LottieAnimationOverlay from './components/LottieAnimationOverlay.jsx'
 import { spawnWinParticles } from './core/PixiParticles.js'
 import { dynamicAudio } from './core/DynamicAudioEngine.js'
+import { playSpatialAudio } from './core/SpatialAudioEngine.js'
 import { realTimeRevenueDashboard } from './core/revenueTracker.js'
 import { walletManager } from './wallet.js'
 import { SpectatorCrowdEngine } from './core/spectatorCrowd.js'
 import { marketRateStreamer, getDynamicHouseEdge } from './economy.js'
 import { abTestEngine } from './core/ABTestFeatureFlag.js'
+import DailyStreakModal from './components/DailyStreakModal.jsx'
+import PremiumAvatarFrame from './components/PremiumAvatarFrame.jsx'
+import LiveRankingBadge from './components/LiveRankingBadge.jsx'
+import { db, ROOT, ref, runTransaction, update } from './firebase.js'
 
 const N = SEG.length
 const SEG_ANGLE = 360 / N // 30 derece
@@ -51,6 +56,7 @@ export default function Wheel({ seat = -1, seats = {}, meName, uid, bal, onOpenS
   const [provablyProof, setProvablyProof] = useState(null)
   const [isProvablyModalOpen, setIsProvablyModalOpen] = useState(false)
   const [voiceEnabled, setVoiceEnabled] = useState(!getVoiceMuted())
+  const [isStreakModalOpen, setIsStreakModalOpen] = useState(false)
   const [customTauntText, setCustomTauntText] = useState('')
   const [marketTicker, setMarketTicker] = useState({ tonPrice: 3.85, change24h: 0, spread: 4.5, status: 'connected' })
 
@@ -136,6 +142,10 @@ export default function Wheel({ seat = -1, seats = {}, meName, uid, bal, onOpenS
       const currentProgress = elapsed / durationMs
       const timerId = setTimeout(() => {
         tick()
+        // 3D Spatial Audio: Çark dönerken tık sesi sol kulaktan (-1) sağ kulağa (+1) akar
+        const panX = (Math.sin((scheduledTime / 180)) * 0.9)
+        playSpatialAudio('wheel_tick', panX, 0, 1)
+
         haptic(currentProgress > 0.75 ? 'suspense' : 'tick')
         if (currentProgress > 0.8) heartbeatSound()
         setPointerFlick(true)
@@ -597,6 +607,25 @@ export default function Wheel({ seat = -1, seats = {}, meName, uid, bal, onOpenS
             style={{
               padding: '2px 8px',
               fontSize: '0.68rem',
+              borderColor: '#ffd700',
+              color: '#ffd700',
+              background: 'rgba(255, 215, 0, 0.15)',
+              fontWeight: 800,
+            }}
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsStreakModalOpen(true)
+              haptic('tick')
+            }}
+          >
+            🔥 7G SERİ VURGUN
+          </button>
+
+          <button
+            className="btn ghost sm"
+            style={{
+              padding: '2px 8px',
+              fontSize: '0.68rem',
               borderColor: 'rgba(0, 229, 117, 0.4)',
               color: '#00e575',
               background: 'rgba(0, 229, 117, 0.12)',
@@ -983,7 +1012,26 @@ export default function Wheel({ seat = -1, seats = {}, meName, uid, bal, onOpenS
               {isSniper && <span className="sniper-badge">🎯 PUSUDA</span>}
               {botState?.isPredatory && <span className="tilt-badge" style={{ background: '#ff1744', borderColor: '#ff5252' }}>🦈 YIRTICI (x{botState.predatoryMult})</span>}
 
-              <div className="sava">{p.ava}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', marginTop: '2px' }}>
+                <PremiumAvatarFrame
+                  tier={
+                    (game.chips?.[i] || 0) >= 30000 || (i === seat && bal >= 30000) ? 'whale' :
+                    (game.chips?.[i] || 0) >= 10000 ? 'diamond' :
+                    (game.chips?.[i] || 0) >= 4000 ? 'gold' :
+                    (game.chips?.[i] || 0) >= 1500 ? 'silver' : 'none'
+                  }
+                  size={36}
+                >
+                  <span style={{ fontSize: '1.25rem' }}>{p.ava}</span>
+                </PremiumAvatarFrame>
+                
+                <LiveRankingBadge
+                  chips={game.chips?.[i] ?? (i === seat ? bal : 0)}
+                  rank={i === 0 ? 1 : i === 1 ? 2 : 3}
+                  isWhale={(game.chips?.[i] || 0) >= 25000}
+                />
+              </div>
+
               <div className="sname">{p.name}{i === seat ? ' (sen)' : ''}</div>
               <div className="slike">🪙 {game.chips?.[i] ?? 0}</div>
               <div className="bets">
@@ -1137,6 +1185,19 @@ export default function Wheel({ seat = -1, seats = {}, meName, uid, bal, onOpenS
           </div>
         </div>
       )}
+      {/* 7 Günlük Bağımlılık Yapan Giriş Ödülü Modalı */}
+      <DailyStreakModal
+        isOpen={isStreakModalOpen}
+        onClose={() => setIsStreakModalOpen(false)}
+        onClaimReward={async (rewardAmount) => {
+          const currentSeat = seat >= 0 ? seat : 0
+          await runTransaction(ref(db, `${ROOT}/table/game/chips/${currentSeat}`), c => (c || 0) + rewardAmount)
+          if (uid) {
+            await runTransaction(ref(db, `${ROOT}/users/${uid}/balance`), c => (c || 0) + rewardAmount)
+          }
+          log(`🔥 GÜNLÜK SERİ ÖDÜLÜ: +${rewardAmount} Çip anında hesabına yattı!`, 'g')
+        }}
+      />
     </div>
   )
 }
