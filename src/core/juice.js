@@ -16,14 +16,57 @@ export function tick() {
     o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + 0.06)
   } catch (e) {}
 }
+
+// Dopamin Yüklü Kasa Açılma / Çan Sesi (Pentatonik ziller + metalik tınlama)
+export function cashRegisterSound() {
+  try {
+    const a = ac(), t = a.currentTime
+    const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51] // C5, E5, G5, C6, E6
+    notes.forEach((freq, idx) => {
+      const o = a.createOscillator()
+      const g = a.createGain()
+      const panner = a.createStereoPanner ? a.createStereoPanner() : null
+
+      o.type = 'sine'
+      o.frequency.setValueAtTime(freq, t + idx * 0.06)
+
+      const start = t + idx * 0.06
+      g.gain.setValueAtTime(0.0001, start)
+      g.gain.linearRampToValueAtTime(0.28 / (idx + 1), start + 0.015)
+      g.gain.exponentialRampToValueAtTime(0.0001, start + 0.6)
+
+      if (panner) {
+        panner.pan.setValueAtTime((idx / (notes.length - 1)) * 1.6 - 0.8, start) // Sol-sağ uzamsal geçiş
+        o.connect(g); g.connect(panner); panner.connect(a.destination)
+      } else {
+        o.connect(g); g.connect(a.destination)
+      }
+
+      o.start(start)
+      o.stop(start + 0.65)
+    })
+  } catch (e) {}
+}
+
 // 808 sub-bass drop (büyük kazanç)
 export function bassDrop() {
   try {
     const a = ac(), t = a.currentTime
     const o = a.createOscillator(), g = a.createGain()
-    o.type = 'sine'; o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(35, t + 0.5)
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6)
-    o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + 0.65)
+    o.type = 'sine'; o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(32, t + 0.55)
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.65, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7)
+    o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + 0.75)
+  } catch (e) {}
+}
+
+// Kalp atışı gerilim sesi (çark yavaşlarken)
+export function heartbeatSound() {
+  try {
+    const a = ac(), t = a.currentTime
+    const o = a.createOscillator(), g = a.createGain()
+    o.type = 'sine'; o.frequency.setValueAtTime(75, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.12)
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.35, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18)
+    o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + 0.2)
   } catch (e) {}
 }
 
@@ -164,30 +207,40 @@ export function haptic(kind) {
       else if (kind === 'spin') h.impactOccurred('medium')
       else if (kind === 'tick') h.impactOccurred('rigid')
       else if (kind === 'win') h.notificationOccurred('success')
+      else if (kind === 'jackpot') h.notificationOccurred('success')
       else if (kind === 'bomb') h.notificationOccurred('error')
       else if (kind === 'steal') h.notificationOccurred('warning')
+      else if (kind === 'suspense') h.impactOccurred('heavy')
       return
     }
-    const nav = navigator.vibrate
+    const nav = navigator.vibrate ? navigator.vibrate.bind(navigator) : null
     if (!nav) return
     if (kind === 'bet') nav(15)
-    else if (kind === 'spin') nav(30)
-    else if (kind === 'tick') nav(10)
-    else if (kind === 'win') nav([50, 30, 100])
-    else if (kind === 'bomb') nav([80, 40, 80, 40, 120])
-    else if (kind === 'steal') nav([40, 20, 40])
+    else if (kind === 'spin') nav(35)
+    else if (kind === 'tick') nav(12)
+    else if (kind === 'suspense') nav([20, 80, 25])
+    else if (kind === 'win') nav([40, 30, 80])
+    else if (kind === 'jackpot') nav([60, 30, 60, 30, 100, 40, 180])
+    else if (kind === 'bomb') nav([120, 40, 90, 30, 160])
+    else if (kind === 'steal') nav([45, 25, 45])
   } catch (e) {}
 }
 
 export function shake(intensity = 'medium') {
   const app = document.querySelector('.wheelwrap') || document.body
-  const amp = { light: 2, medium: 5, heavy: 10 }[intensity] || 5
-  const dur = { light: 120, medium: 300, heavy: 500 }[intensity] || 300
+  const amp = { light: 2.5, medium: 6, heavy: 12, extreme: 18 }[intensity] || 6
+  const rotAmp = { light: 0.4, medium: 1.2, heavy: 2.5, extreme: 4 }[intensity] || 1.2
+  const dur = { light: 140, medium: 320, heavy: 550, extreme: 700 }[intensity] || 320
   let el = 0
   const iv = setInterval(() => {
-    const x = (Math.random() - 0.5) * amp * 2, y = (Math.random() - 0.5) * amp * 2
-    app.style.transform = `translate(${x}px,${y}px)`
+    const x = (Math.random() - 0.5) * amp * 2
+    const y = (Math.random() - 0.5) * amp * 2
+    const rot = (Math.random() - 0.5) * rotAmp * 2
+    app.style.transform = `translate(${x}px, ${y}px) rotate(${rot}deg)`
     el += 16
-    if (el >= dur) { clearInterval(iv); app.style.transform = '' }
+    if (el >= dur) {
+      clearInterval(iv)
+      app.style.transform = ''
+    }
   }, 16)
 }

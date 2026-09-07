@@ -4,8 +4,12 @@ import {
   placeBet, clearMyBets, advancePhase, injectBotBets, resetGame,
   now, seatInfo, triggerSpinWithBet, log,
 } from './gameSync.js'
-import { tick, bassDrop, bombSound, haptic, shake, spinningSound, clackSound } from './core/juice.js'
+import {
+  tick, bassDrop, bombSound, haptic, shake, spinningSound, clackSound,
+  cashRegisterSound, heartbeatSound,
+} from './core/juice.js'
 import { rngEngine } from './core/RNGEngine.js'
+import { authoritativeClient } from './core/authoritativeClient.js'
 import { VisualFX } from './core/VisualFX.js'
 
 const N = SEG.length
@@ -24,13 +28,26 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
   const [spinStatusText, setSpinStatusText] = useState('')
   const [provablyProof, setProvablyProof] = useState(null)
 
+  const rotationRef = useRef(0)
+  const lastSpunKeyRef = useRef('')
   const gRef = useRef(null); gRef.current = game
   const sRef = useRef(null); sRef.current = seats
   const isHost = seat >= 0 && hostSeat(seats) === seat
   const tickTimersRef = useRef([])
-  const prevPhase = useRef(null)
 
   useEffect(() => { initGameIfMissing() }, [])
+
+  // Sunucu / Masa bazlı kriptografik kanıtı senkronla
+  useEffect(() => {
+    if (game?.provablyProof) {
+      setProvablyProof({
+        hash: game.provablyProof.serverSeedHash || game.provablyProof.rawHex || '',
+        clientSeed: game.provablyProof.clientSeed,
+        nonce: game.provablyProof.nonce,
+        authoritative: game.provablyProof.authoritative,
+      })
+    }
+  }, [game?.provablyProof])
 
   // HOST sürücüsü: faz geçişi + bot bahsi (yalnız host)
   useEffect(() => {
@@ -54,9 +71,11 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
 
     while (elapsed < durationMs - 150) {
       const scheduledTime = elapsed
+      const currentProgress = elapsed / durationMs
       const timerId = setTimeout(() => {
         tick()
-        haptic('tick')
+        haptic(currentProgress > 0.75 ? 'suspense' : 'tick')
+        if (currentProgress > 0.8) heartbeatSound()
         setPointerFlick(true)
         setTimeout(() => setPointerFlick(false), 70)
       }, scheduledTime)
@@ -69,16 +88,17 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
     }
   }, [])
 
-  // CSS tabanlı çark dönüş fonksiyonu (.wheelbox elemanı için)
+  // Saf GPU-hızlandırmalı akıcı çark dönüş fonksiyonu
   const executeWheelSpin = useCallback((targetSegIndex, onComplete) => {
     const targetAngleMod = (360 - (targetSegIndex * SEG_ANGLE + SEG_ANGLE / 2)) % 360
-    const currentMod = ((currentRotation % 360) + 360) % 360
+    const currentMod = ((rotationRef.current % 360) + 360) % 360
     let diff = targetAngleMod - currentMod
-    if (diff < 0) diff += 360
+    if (diff <= 0) diff += 360
 
-    // En az 5 ila 7 tam tur (1800° - 2520°) dönerek heyecanlı bir yavaşlama sağlar
-    const extraRotations = (5 + Math.floor(Math.random() * 3)) * 360
-    const finalAngle = currentRotation + extraRotations + diff
+    // En az 5 ila 6 tam tur (1800° - 2160°) dönerek kusursuz yavaşlama sağlar
+    const extraRotations = (5 + Math.floor(Math.random() * 2)) * 360
+    const finalAngle = rotationRef.current + extraRotations + diff
+    rotationRef.current = finalAngle
 
     setIsSpinning(true)
     setActiveWinSeg(targetSegIndex)
@@ -104,38 +124,44 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
       if (landedSeg.t === 0) {
         bombSound()
         haptic('bomb')
-        shake('heavy')
+        shake('extreme')
+        VisualFX.triggerBombBlast(65)
       } else if (landedSeg.t === 'S') {
         haptic('steal')
-        shake('medium')
+        shake('heavy')
+        VisualFX.triggerStealVortex(55)
       } else if (typeof landedSeg.t === 'number' && landedSeg.t >= 5) {
         bassDrop()
+        cashRegisterSound()
+        haptic('jackpot')
+        shake('heavy')
+        VisualFX.triggerCoinExplosion(90, `x${landedSeg.t} JACKPOT!`)
+      } else {
+        cashRegisterSound()
         haptic('win')
         shake('medium')
-        VisualFX.triggerCoinExplosion(70)
-      } else {
-        tick()
-        haptic('win')
-        shake('light')
         if (typeof landedSeg.t === 'number' && landedSeg.t > 0) {
-          VisualFX.triggerCoinExplosion(35)
+          VisualFX.triggerCoinExplosion(45, `x${landedSeg.t} KAZANÇ`)
         }
       }
 
       if (onComplete) onComplete(targetSegIndex)
     }, SPIN_MS)
-  }, [currentRotation, startDeceleratingTicks])
+  }, [startDeceleratingTicks])
 
-  // Firebase üzerinden senkron faz 'spin' geldiğinde de .wheelbox CSS dönüşünü işlet
+  // Masa veya sunucu spin fazına geçtiğinde tek seferlik akıcı dönüşü tetikle
   useEffect(() => {
     if (!game) return
-    if (game.phase === 'spin' && game.segResult != null && !isSpinning) {
+    if (game.phase === 'spin' && game.segResult != null) {
+      const spinKey = `${game.round || 1}_${game.segResult}_${game.phaseUntil || 0}`
+      if (lastSpunKeyRef.current === spinKey) return
+      lastSpunKeyRef.current = spinKey
       executeWheelSpin(game.segResult)
     }
-  }, [game?.phase, game?.segResult, isSpinning, executeWheelSpin])
+  }, [game?.phase, game?.segResult, game?.phaseUntil, game?.round, executeWheelSpin])
 
-  // BAHİS KOYULDUĞUNDA TETİKLENEN MOTOR
-  const handlePlaceBet = async (segIdx) => {
+  // BAHİS VE ANINDA ÇEVİRME MOTORU
+  const handlePlaceBet = async (segIdx, autoSpin = false) => {
     if (isSpinning) return
 
     haptic('bet')
@@ -154,28 +180,64 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
       if (currentSeat < 0) currentSeat = 0
     }
 
-    // Bahsi kaydet
-    if (currentSeat >= 0) {
-      placeBet(currentSeat, segIdx, chip)
+    // Yetersiz bakiye kontrolü
+    const currentChips = (game?.chips?.[currentSeat]) ?? 0
+    if (currentChips < chip) {
+      log(`⚠️ Yetersiz çip! Mevcut: ${currentChips}, Gerekli: ${chip}`, 'r')
+      haptic('bomb')
+      return
     }
 
-    // Kriptografik Provably Fair HMAC-SHA256 ile sonuç üretimi
-    const fairRound = await rngEngine.generateProvablyFairNumber(N)
-    const randomWinningSeg = fairRound.result
-    setProvablyProof({
-      hash: fairRound.serverSeedHash || fairRound.rawHex || '',
-      clientSeed: fairRound.clientSeed,
-      nonce: fairRound.nonce,
-    })
+    // Bahsi masaya koy
+    if (currentSeat >= 0 && segIdx != null) {
+      await placeBet(currentSeat, segIdx, chip)
+    }
 
-    log(`🎲 Koltuk ${currentSeat + 1}: ${SEG[segIdx].l} dilimine ${chip} chip bahis bastı! Çark dönüyor...`, 'y')
-
-    // .wheelbox elemanının CSS rotasyon animasyonunu başlat
-    executeWheelSpin(randomWinningSeg, async (finalSegIdx) => {
-      // Masayı ve ödülleri çözümle
-      if (currentSeat >= 0) {
-        await triggerSpinWithBet(currentSeat, segIdx, 0, finalSegIdx)
+    // Eğer anında çevrilmek istendiyse, yetkili çekilişi alıp senkron spin fazını başlat
+    if (autoSpin) {
+      const spinData = await authoritativeClient.requestSpin(N)
+      const randomWinningSeg = spinData.winningSeg
+      const proofData = {
+        hash: spinData.serverSeedHash || spinData.rawHex || '',
+        clientSeed: spinData.clientSeed,
+        nonce: spinData.nonce,
+        authoritative: spinData.isServerAuthoritative,
       }
+      setProvablyProof(proofData)
+
+      if (segIdx != null) {
+        log(`🎲 Koltuk ${currentSeat + 1}: ${SEG[segIdx].l} dilimine ${chip} chip bahis bastı ve çarkı çevirdi!`, 'y')
+      }
+
+      await triggerSpinWithBet(currentSeat, segIdx, 0, randomWinningSeg, {
+        serverSeedHash: proofData.hash,
+        clientSeed: proofData.clientSeed,
+        nonce: proofData.nonce,
+        rawHex: spinData.rawHex,
+        authoritative: spinData.isServerAuthoritative,
+      })
+    }
+  }
+
+  // Masadaki mevcut bahislerle çarkı anında çevirme
+  const handleSpinNow = async () => {
+    if (isSpinning) return
+    const spinData = await authoritativeClient.requestSpin(N)
+    const randomWinningSeg = spinData.winningSeg
+    const proofData = {
+      hash: spinData.serverSeedHash || spinData.rawHex || '',
+      clientSeed: spinData.clientSeed,
+      nonce: spinData.nonce,
+      authoritative: spinData.isServerAuthoritative,
+    }
+    setProvablyProof(proofData)
+
+    await triggerSpinWithBet(seat, null, 0, randomWinningSeg, {
+      serverSeedHash: proofData.hash,
+      clientSeed: proofData.clientSeed,
+      nonce: proofData.nonce,
+      rawHex: spinData.rawHex,
+      authoritative: spinData.isServerAuthoritative,
     })
   }
 
@@ -217,83 +279,77 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
   // .wheelbox için doğrudan CSS rotasyon ve yavaşlama stili
   const wheelboxStyle = {
     transform: `rotate(${currentRotation}deg)`,
-    '--spin-start': `${currentRotation}deg`,
-    '--spin-target': `${currentRotation}deg`,
     '--spin-duration': `${SPIN_MS}ms`,
-    transition: isSpinning
-      ? `transform ${SPIN_MS}ms cubic-bezier(0.12, 0.8, 0.15, 1)`
-      : 'none',
-  }
-
-  // Merkez göbek yazısının dik kalması için ters rotasyon
-  const hubCounterStyle = {
-    transform: `rotate(${-currentRotation}deg)`,
-    transition: isSpinning
-      ? `transform ${SPIN_MS}ms cubic-bezier(0.12, 0.8, 0.15, 1)`
-      : 'none',
   }
 
   const feedLines = Object.values(game.feed || {}).sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 8)
-  const centerDisplayLabel = activeWinSeg != null
-    ? SEG[activeWinSeg].l
-    : game.segResult != null
-      ? SEG[game.segResult].l
-      : '🥷'
+  const centerDisplayLabel = isSpinning
+    ? '🌀'
+    : activeWinSeg != null
+      ? SEG[activeWinSeg].l
+      : game.segResult != null
+        ? SEG[game.segResult].l
+        : '🥷'
+
+  const totalMyBet = Object.values(myBets).reduce((a, b) => a + b, 0)
 
   return (
     <div className="wheelwrap">
-      {/* İğne çarkın tepesinde sabit kalır, çark altında yavaşlayarak döner */}
-      <div className={`pointer ${pointerFlick ? 'flick' : ''}`} />
+      {/* Çark Sahnesi: İğne tepede sabit, merkez göbek ortada sabit, sadece wheelbox döner */}
+      <div className="wheel-stage">
+        {/* İğne çarkın tepesinde sabit kalır */}
+        <div className={`pointer ${pointerFlick ? 'flick' : ''}`} />
 
-      {/* CSS Animasyonlu .wheelbox Elemanı */}
-      <div
-        className={`wheelbox ${isSpinning ? 'spinning' : ''}`}
-        style={wheelboxStyle}
-      >
-        <svg viewBox="0 0 200 200">
-          <g>
-            {arcs.map(a => (
-              <g
-                key={a.i}
-                onClick={() => handlePlaceBet(a.i)}
-                style={{
-                  cursor: isSpinning ? 'not-allowed' : 'pointer',
-                  opacity: isSpinning && activeWinSeg != null && activeWinSeg !== a.i ? 0.85 : 1,
-                }}
-              >
-                <path d={a.d} fill={a.s.c} stroke="#0b0e14" strokeWidth="1.5" />
-                <text
-                  x={a.tx}
-                  y={a.ty}
-                  fill="#fff"
-                  fontSize="11"
-                  fontWeight="800"
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  transform={`rotate(${a.i * SEG_ANGLE + SEG_ANGLE / 2} ${a.tx} ${a.ty})`}
+        {/* CSS GPU-Animasyonlu .wheelbox Elemanı */}
+        <div
+          className={`wheelbox ${isSpinning ? 'spinning' : ''}`}
+          style={wheelboxStyle}
+        >
+          <svg viewBox="0 0 200 200">
+            <g>
+              {arcs.map(a => (
+                <g
+                  key={a.i}
+                  onClick={() => handlePlaceBet(a.i, false)}
+                  style={{
+                    cursor: isSpinning ? 'not-allowed' : 'pointer',
+                    opacity: isSpinning && activeWinSeg != null && activeWinSeg !== a.i ? 0.85 : 1,
+                  }}
                 >
-                  {a.s.l}
-                </text>
-                {(myBets[a.i] || 0) > 0 && (
+                  <path d={a.d} fill={a.s.c} stroke="#0b0e14" strokeWidth="1.5" />
                   <text
                     x={a.tx}
-                    y={a.ty + 12}
-                    fill="#ffd75e"
-                    fontSize="7"
+                    y={a.ty}
+                    fill="#fff"
+                    fontSize="11"
                     fontWeight="800"
                     textAnchor="middle"
+                    dominantBaseline="middle"
+                    transform={`rotate(${a.i * SEG_ANGLE + SEG_ANGLE / 2} ${a.tx} ${a.ty})`}
                   >
-                    {myBets[a.i]}
+                    {a.s.l}
                   </text>
-                )}
-              </g>
-            ))}
-          </g>
-        </svg>
+                  {(myBets[a.i] || 0) > 0 && (
+                    <text
+                      x={a.tx}
+                      y={a.ty + 12}
+                      fill="#ffd75e"
+                      fontSize="7"
+                      fontWeight="800"
+                      textAnchor="middle"
+                    >
+                      {myBets[a.i]}
+                    </text>
+                  )}
+                </g>
+              ))}
+            </g>
+          </svg>
+        </div>
 
-        {/* Merkez Göbek (Dik durması için counter-rotate uygulanır) */}
+        {/* Merkez Göbek (Statik ve kristal netliğinde, çarkın dönüşünden bağımsız dik durur) */}
         <div className="hub">
-          <div className="core" style={hubCounterStyle}>
+          <div className="core">
             <div className="mult">{centerDisplayLabel}</div>
             <div className="sub">TUR {game.round || 1} · POT {game.pot || 0}</div>
           </div>
@@ -322,10 +378,25 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
         {seat >= 0 && (
           <button
             className="btn ghost"
-            disabled={isSpinning}
+            disabled={isSpinning || totalMyBet === 0}
             onClick={() => clearMyBets(seat)}
           >
             Temizle
+          </button>
+        )}
+        {totalMyBet > 0 && (
+          <button
+            className="btn"
+            disabled={isSpinning}
+            style={{
+              background: 'linear-gradient(135deg, #ffd700, #ff9900)',
+              color: '#000',
+              fontWeight: '900',
+              boxShadow: '0 0 16px rgba(255, 215, 0, 0.5)',
+            }}
+            onClick={handleSpinNow}
+          >
+            ⚡ ÇARKI ÇEVİR ({totalMyBet} Çip)
           </button>
         )}
       </div>
@@ -336,7 +407,7 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
           className="btn"
           disabled={isSpinning}
           style={{ background: '#e23b3b', color: '#fff', fontSize: '0.8rem', padding: '8px 12px' }}
-          onClick={() => handlePlaceBet(0)}
+          onClick={() => handlePlaceBet(0, true)}
         >
           🎲 x2.33 Bahis & Çevir
         </button>
@@ -344,7 +415,7 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
           className="btn"
           disabled={isSpinning}
           style={{ background: '#f5b301', color: '#141414', fontSize: '0.8rem', padding: '8px 12px' }}
-          onClick={() => handlePlaceBet(2)}
+          onClick={() => handlePlaceBet(2, true)}
         >
           ⭐ x5.82 Bahis & Çevir
         </button>
@@ -352,7 +423,7 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
           className="btn"
           disabled={isSpinning}
           style={{ background: '#00c26e', color: '#fff', fontSize: '0.8rem', padding: '8px 12px' }}
-          onClick={() => handlePlaceBet(6)}
+          onClick={() => handlePlaceBet(6, true)}
         >
           💎 x11.64 Bahis & Çevir
         </button>
@@ -360,7 +431,7 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
           className="btn"
           disabled={isSpinning}
           style={{ background: '#a05ce6', color: '#fff', fontSize: '0.8rem', padding: '8px 12px' }}
-          onClick={() => handlePlaceBet(4)}
+          onClick={() => handlePlaceBet(4, true)}
         >
           🥷 ÇAL Bahis & Çevir
         </button>
@@ -381,15 +452,17 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
         gap: '4px',
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ color: 'var(--gold)', fontWeight: '700' }}>🛡️ Provably Fair (HMAC-SHA256)</span>
-          <span style={{ color: '#00c26e' }}>● Doğrulanabilir</span>
+          <span style={{ color: 'var(--gold)', fontWeight: '700' }}>🛡️ Authoritative RNG (HMAC-SHA256)</span>
+          <span style={{ color: '#00c26e', fontSize: '0.65rem' }}>
+            {provablyProof?.authoritative !== false ? '● Server Authoritative' : '● Cryptographic WebCrypto'}
+          </span>
         </div>
         {provablyProof && provablyProof.hash ? (
           <div style={{ wordBreak: 'break-all', fontFamily: 'monospace', fontSize: '0.65rem' }}>
-            Hash: <span style={{ color: '#fff' }}>{String(provablyProof.hash).substring(0, 24)}...</span> | Nonce: <span style={{ color: 'var(--gold2)' }}>{provablyProof.nonce ?? 0}</span>
+            Commit Hash: <span style={{ color: '#fff' }}>{String(provablyProof.hash).substring(0, 24)}...</span> | Nonce: <span style={{ color: 'var(--gold2)' }}>{provablyProof.nonce ?? 0}</span>
           </div>
         ) : (
-          <div style={{ fontSize: '0.65rem' }}>Her dönüş Web Crypto API ile imzalanır ve doğrulanabilir hash üretir.</div>
+          <div style={{ fontSize: '0.65rem' }}>Her dönüş GLI-19 standardında HMAC-SHA256 sunucu taahhüdüyle üretilir.</div>
         )}
       </div>
 

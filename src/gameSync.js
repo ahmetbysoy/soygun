@@ -4,8 +4,10 @@
 // okuyup render eder — local state yok.
 import { useEffect, useState } from 'react'
 import { db, ref, onValue, set, get, update, runTransaction, ROOT } from './firebase.js'
-import { getPool, adjPool, addPaid } from './economy.js'
+import { getPool, adjPool, addPaid, adjJackpot, getJackpotPool } from './economy.js'
 import { BotBrain } from './core/botBrain.js'
+import { authoritativeClient } from './core/authoritativeClient.js'
+import { MathEngine } from './core/MathEngine.js'
 
 const botBrains = [new BotBrain('risk'), new BotBrain('safe'), new BotBrain('chaos'), new BotBrain('risk')]
 
@@ -112,7 +114,10 @@ export async function advancePhase(game, seats) {
   if (!game || now() < game.phaseUntil) return
   if (game.phase === 'bet') return lockPhase()
   if (game.phase === 'lock') return spinPhase()
-  if (game.phase === 'spin') { const pool = await getPool(); return settlePhase(game, pool) }
+  if (game.phase === 'spin') {
+    const pool = await getPool()
+    return settlePhase(game, pool, seats)
+  }
   if (game.phase === 'result') return startRound(game, seats)
 }
 
@@ -130,10 +135,21 @@ function lockPhase() {
   })
 }
 
-function spinPhase() {
+async function spinPhase() {
+  const spinData = await authoritativeClient.requestSpin(N)
+  const winIdx = spinData.winningSeg
   return runTransaction(gRef(), g => {
     if (!g || g.phase !== 'lock') return
-    g.segResult = rnd(N); g.phase = 'spin'; g.phaseUntil = now() + SPIN_MS + 250
+    g.segResult = winIdx
+    g.provablyProof = {
+      serverSeedHash: spinData.serverSeedHash,
+      clientSeed: spinData.clientSeed,
+      nonce: spinData.nonce,
+      rawHex: spinData.rawHex,
+      authoritative: spinData.isServerAuthoritative,
+    }
+    g.phase = 'spin'
+    g.phaseUntil = now() + SPIN_MS + 250
     return g
   })
 }
@@ -141,23 +157,57 @@ function spinPhase() {
 // Dinamik RTP: çarpan ödemesinin "pot üstü" kısmı PRIZE POOL'dan gelir.
 // Pool yetmezse çarpan otomatik küçülür → kasa asla negatife düşmez.
 // BOMB → kasa kazanır, pot prize pool'a akar. STEAL → oyuncular arası (pool nötr).
-async function settlePhase(game, pool) {
+// Her bahsin %1'i PROGRESİF JACKPOT havuzuna beslenir.
+async function settlePhase(game, pool, seats = {}) {
   const idx = game.segResult, seg = SEG[idx]
   const chips = { ...game.chips }, out = { ...game.out }
   let poolDelta = 0, paidOut = 0, effMult = seg.t
+  const pot = game.pot || 0
+
+  // 🎰 Her bahisten %1 ortak progresif jackpot havuzuna aktar
+  if (pot > 0) {
+    const jackpotCut = Math.max(1, Math.round(pot * 0.01))
+    adjJackpot(jackpotCut)
+  }
+
   // bir koltuğun verilen çarpan SINIFINDAKI tüm dilimlere koyduğu toplam bahis
   const seatOnClass = (i, cls) => {
     let s = 0
     for (let j = 0; j < SEG.length; j++) if (SEG[j].t === cls) s += game.bets?.[i]?.[j] || 0
     return s
   }
+
+  // Her koltuğun toplam yatırdığı bahis
+  const seatTotalBet = (i) => {
+    return Object.values(game.bets?.[i] || {}).reduce((a, x) => a + x, 0)
+  }
+
+  const seatWins = {}
+
   if (typeof seg.t === 'number' && seg.t > 0) {
     const cls = seg.t
     let totalB = 0; const per = {}
     for (let i = 0; i < N_SEATS; i++) { per[i] = seatOnClass(i, cls); totalB += per[i] }
     let mult = cls, over = totalB * (mult - 1)
     if (over > pool) { mult = 1 + pool / Math.max(1, totalB); if (mult < 1) mult = 1; over = totalB * (mult - 1) }
-    for (let i = 0; i < N_SEATS; i++) if (per[i] > 0) { const win = Math.round(per[i] * mult); chips[i] = (chips[i] || 0) + win; paidOut += win }
+    for (let i = 0; i < N_SEATS; i++) {
+      if (per[i] > 0) {
+        let win = Math.round(per[i] * mult)
+        // 💎 Büyük Vuruş (x11.64): Progresif Jackpot Havuzundan %15 Ekstra Bonus Patlar!
+        if (cls >= 11) {
+          const curJackpot = await getJackpotPool()
+          if (curJackpot > 50) {
+            const jackpotBonus = Math.round(curJackpot * 0.15)
+            win += jackpotBonus
+            adjJackpot(-jackpotBonus)
+            log(`💥 JACKPOT PATLADI! ${seats[i]?.name || `Koltuk ${i + 1}`} +${jackpotBonus} chip ekstra ödül aldı!`, 'g')
+          }
+        }
+        chips[i] = (chips[i] || 0) + win
+        paidOut += win
+        seatWins[i] = win
+      }
+    }
     poolDelta = -over; effMult = mult
   } else if (seg.t === 'S') {
     const thieves = []
@@ -169,7 +219,31 @@ async function settlePhase(game, pool) {
         const take = Math.floor((chips[o] || 0) * rate); chips[o] -= take; chips[th] = (chips[th] || 0) + take
       }
     })
-  } else { poolDelta += (game.pot || 0) }   // 💣 BOMB → kasa
+  } else { poolDelta += pot }   // 💣 BOMB → kasa
+
+  // 👑 Gerçek İnsan Oyuncuların VIP Hacim & Rakeback Güncellemesi
+  for (let i = 0; i < N_SEATS; i++) {
+    const seatObj = seats[i]
+    if (seatObj && seatObj.uid) {
+      const betAmt = seatTotalBet(i)
+      if (betAmt > 0) {
+        const winAmt = seatWins[i] || 0
+        const netLoss = Math.max(0, betAmt - winAmt)
+        const uRef = ref(db, `${ROOT}/users/${seatObj.uid}`)
+        runTransaction(uRef, u => {
+          if (!u) return u
+          u.total_wagered = (u.total_wagered || 0) + betAmt
+          if (netLoss > 0) {
+            const vipTier = MathEngine.getVipTier(u.total_wagered)
+            const rakeback = MathEngine.calculateRakeback(netLoss, vipTier.id)
+            u.accumulated_rakeback = (u.accumulated_rakeback || 0) + rakeback
+          }
+          return u
+        }).catch(() => {})
+      }
+    }
+  }
+
   for (let i = 0; i < N_SEATS; i++) if ((chips[i] || 0) <= 0) { chips[i] = 0; out[i] = true }
   const alive = [0, 1, 2, 3].filter(i => !out[i])
   const patch = { chips, out, phase: 'result', phaseUntil: now() + RESULT_MS, lastMult: effMult }
@@ -194,9 +268,22 @@ export function resetGame() {
   return update(ref(db, `${ROOT}/table`), { game: null })
 }
 
-// Bahis konduğunda doğrudan çarkı çeviren ve rastgele kazanan dilimi belirleyen motor
-export async function triggerSpinWithBet(seat, segIdx, amount, customWinSeg) {
-  const winIdx = (customWinSeg != null && customWinSeg >= 0) ? customWinSeg : rnd(N)
+// Bahis konduğunda doğrudan çarkı çeviren ve güvenli kazanan dilimi belirleyen motor
+export async function triggerSpinWithBet(seat, segIdx, amount, customWinSeg, customProof) {
+  let winIdx = customWinSeg
+  let proof = customProof || null
+
+  if (winIdx == null || winIdx < 0) {
+    const authData = await authoritativeClient.requestSpin(N)
+    winIdx = authData.winningSeg
+    proof = {
+      serverSeedHash: authData.serverSeedHash,
+      clientSeed: authData.clientSeed,
+      nonce: authData.nonce,
+      rawHex: authData.rawHex,
+      authoritative: authData.isServerAuthoritative,
+    }
+  }
   
   if (seat >= 0 && segIdx != null && amount > 0) {
     await runTransaction(ref(db, `${ROOT}/table/game/bets/${seat}/${segIdx}`), cur => (cur || 0) + amount)
@@ -214,6 +301,7 @@ export async function triggerSpinWithBet(seat, segIdx, amount, customWinSeg) {
     g.chips = chips
     g.pot = pot
     g.segResult = winIdx
+    if (proof) g.provablyProof = proof
     g.phase = 'spin'
     g.phaseUntil = now() + SPIN_MS + 250
     return g

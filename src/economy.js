@@ -1,49 +1,148 @@
-// economy.js — Faz 0 ekonomi motoru (çekimsiz).
-// Tek bakiye: users/{uid}/balance (chip). Prize Pool + reklam geliri takibi.
-// ⚠️ Faz 0'da reklam SİMÜLASYON; gerçek SDK + SSV Faz 1'de (client sinyaline güvenme).
+// economy.js — Gerçek dinamik ekonomi, kasa havuzu, VIP Rakeback ve kripto paket motoru.
+// ❌ Simülasyon, mock veri ve yer tutucu mantıklar tamamen temizlenmiştir.
 import { useEffect, useState } from 'react'
 import { db, ref, onValue, runTransaction, get, update, ROOT } from './firebase.js'
+import { MathEngine, VIP_TIERS } from './core/MathEngine.js'
 
-export const CHIP_VALUE = 0.0005        // $ / chip (sen belirlersin)
-export const PAYOUT_RATIO = 0.5          // reklam gelirinin kullanıcıya verilen payı
-export const ECPM_SIM = 3                // $ — TR gerçekçi; ağ seçilince güncelle
-export const DAILY_AD_CAP = 15
-export const AMOE_DAILY_CHIPS = 20       // reklamsız günlük bedava giriş (sweepstakes AMOE)
-const AD_REV_CHIPS = Math.max(1, Math.round((ECPM_SIM / 1000) / CHIP_VALUE))  // görüntüleme başına gelir (chip)
+export const CHIP_VALUE_USD = 0.01 // 1 Chip = 0.01 USD baz piyasa değeri
+export const JACKPOT_CONTRIBUTION_RATE = 0.01 // Her bahsin %1'i ortak progresif jackpot havuzuna akar
 
 const econRef = () => ref(db, `${ROOT}/econ`)
-export function useEcon() { const [e, setE] = useState(null); useEffect(() => onValue(econRef(), s => setE(s.val())), []); return e }
 
-export const getPool = () => get(ref(db, `${ROOT}/econ/prize_pool`)).then(s => s.val() || 0)
-export const adjPool = d => runTransaction(ref(db, `${ROOT}/econ/prize_pool`), c => Math.max(0, (c || 0) + d))
-export const addPaid = d => runTransaction(ref(db, `${ROOT}/econ/paid_chips`), c => (c || 0) + d)
-export const addRevenue = d => runTransaction(ref(db, `${ROOT}/econ/ad_revenue`), c => (c || 0) + d)
-
-// azalan getiri (ad-farming freni) — n: bugünkü kaçıncı izleme (1-based)
-export const adFactor = n => (n <= 2 ? 1 : n <= 5 ? 0.75 : n <= 10 ? 0.5 : 0.25)
-const today = () => new Date().toISOString().slice(0, 10)
-
-// 📺 reklam izle (Faz 0 SİMÜLASYON) → chip ver, marjı prize pool'a
-export async function watchAd(uid) {
-  const d = today(), uRef = ref(db, `${ROOT}/users/${uid}`)
-  const u = (await get(uRef)).val() || {}
-  const cnt = u.ad_day === d ? (u.ad_watch_today || 0) : 0
-  if (cnt >= DAILY_AD_CAP) return { ok: false, msg: `Günlük reklam limiti (${DAILY_AD_CAP}) doldu` }
-  const f = adFactor(cnt + 1)
-  const give = Math.max(1, Math.round(AD_REV_CHIPS * PAYOUT_RATIO * f))
-  const margin = AD_REV_CHIPS - give
-  await runTransaction(ref(db, `${ROOT}/users/${uid}/balance`), c => (c || 0) + give)
-  await update(uRef, { ad_day: d, ad_watch_today: cnt + 1 })
-  adjPool(margin); addRevenue(AD_REV_CHIPS)
-  return { ok: true, give, left: DAILY_AD_CAP - cnt - 1 }
+export function useEcon() {
+  const [e, setE] = useState(null)
+  useEffect(() => {
+    const un = onValue(econRef(), s => setE(s.val() || {}))
+    return () => un()
+  }, [])
+  return e
 }
 
-// 🎁 AMOE: reklamsız günlük bedava chip (sweepstakes güvenlik katmanı)
-export async function claimDailyFree(uid) {
-  const d = today(), uRef = ref(db, `${ROOT}/users/${uid}`)
+// Havuz Okuma ve Yönetim Fonksiyonları
+export const getPool = () => get(ref(db, `${ROOT}/econ/prize_pool`)).then(s => s.val() || 0)
+export const getJackpotPool = () => get(ref(db, `${ROOT}/econ/jackpot_pool`)).then(s => s.val() || 0)
+
+export const adjPool = d => runTransaction(ref(db, `${ROOT}/econ/prize_pool`), c => Math.max(0, (c || 0) + d))
+export const adjJackpot = d => runTransaction(ref(db, `${ROOT}/econ/jackpot_pool`), c => Math.max(0, (c || 0) + d))
+export const addPaid = d => runTransaction(ref(db, `${ROOT}/econ/paid_chips`), c => (c || 0) + d)
+export const addRevenue = d => runTransaction(ref(db, `${ROOT}/econ/revenue_chips`), c => (c || 0) + d)
+
+const todayStr = () => new Date().toISOString().slice(0, 10)
+
+/**
+ * 👑 VIP ve Rakeback Bilgilerini Getir
+ */
+export async function getUserLoyalty(uid) {
+  const uRef = ref(db, `${ROOT}/users/${uid}`)
   const u = (await get(uRef)).val() || {}
-  if (u.amoe_day === d) return { ok: false, msg: 'Bugün zaten aldın' }
-  await runTransaction(ref(db, `${ROOT}/users/${uid}/balance`), c => (c || 0) + AMOE_DAILY_CHIPS)
-  await update(uRef, { amoe_day: d })
-  return { ok: true, give: AMOE_DAILY_CHIPS }
+  const totalWagered = u.total_wagered || 0
+  const accumulatedRakeback = u.accumulated_rakeback || 0
+  const vipInfo = MathEngine.getVipTier(totalWagered)
+  const lastDaily = u.last_daily_date || null
+  const streak = u.login_streak || 0
+
+  return {
+    uid,
+    totalWagered,
+    accumulatedRakeback,
+    vipTier: vipInfo,
+    lastDaily,
+    streak,
+  }
+}
+
+/**
+ * 💸 Biriken VIP Rakeback / Cashback'i Oyuncu Bakiyesine Tahsil Et
+ */
+export async function claimRakeback(uid) {
+  const uRef = ref(db, `${ROOT}/users/${uid}`)
+  let claimedAmount = 0
+
+  const res = await runTransaction(uRef, user => {
+    if (!user) return user
+    const pending = user.accumulated_rakeback || 0
+    if (pending <= 0) return // Hiç rakeback yok, işlemi durdur
+    claimedAmount = pending
+    user.accumulated_rakeback = 0
+    user.balance = (user.balance || 0) + claimedAmount
+    user.last_rakeback_claim = Date.now()
+    return user
+  })
+
+  if (!res.committed || claimedAmount <= 0) {
+    return { ok: false, msg: 'Tahsil edilecek birikmiş rakeback bakiyesi bulunamadı.' }
+  }
+
+  addPaid(claimedAmount)
+  return { ok: true, claimed: claimedAmount }
+}
+
+/**
+ * 🎁 Günlük Ganimet Kasası (Daily Heist Streak Loot):
+ * Oyuncunun ardışık gün serisine göre artan dopamin ödülü
+ */
+export async function claimDailyStreak(uid) {
+  const d = todayStr()
+  const uRef = ref(db, `${ROOT}/users/${uid}`)
+  const u = (await get(uRef)).val() || {}
+
+  if (u.last_daily_date === d) {
+    return { ok: false, msg: 'Bugünkü ganimet kasasını zaten açtın. Gece 00:00’da tekrar gel!' }
+  }
+
+  // Dünün tarihi ile karşılaştırıp streak'i koru veya sıfırla
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+  let newStreak = 1
+  if (u.last_daily_date === yesterday) {
+    newStreak = (u.login_streak || 1) + 1
+  }
+
+  const rewardChips = MathEngine.calculateStreakReward(newStreak)
+
+  await runTransaction(ref(db, `${ROOT}/users/${uid}/balance`), c => (c || 0) + rewardChips)
+  await update(uRef, {
+    last_daily_date: d,
+    login_streak: newStreak,
+  })
+
+  adjPool(-rewardChips)
+  addPaid(rewardChips)
+
+  return {
+    ok: true,
+    give: rewardChips,
+    streak: newStreak,
+    isJackpotDay: newStreak % 7 === 0,
+  }
+}
+
+/**
+ * 🛒 Gerçek Çip Paket Satın Alma (TON / Kripto veya Direkt Bakiye Yükleme)
+ */
+export async function purchaseChipPackage(uid, packageId, txHash = '') {
+  try {
+    const res = await fetch('/api/shop/verify-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid, packageId, txHash }),
+    })
+    const data = await res.json()
+    if (!data.success) {
+      return { ok: false, msg: data.error || 'Ödeme doğrulanamadı' }
+    }
+
+    // Kullanıcı bakiyesini Firebase üzerinde artır
+    await runTransaction(ref(db, `${ROOT}/users/${uid}/balance`), c => (c || 0) + data.chipsAdded)
+    addRevenue(data.chipsAdded)
+    adjPool(Math.round(data.chipsAdded * 0.4)) // %40'ı likidite havuzuna aktarılır
+
+    return {
+      ok: true,
+      chipsAdded: data.chipsAdded,
+      packageName: data.packageName,
+      newBalance: data.newBalance,
+    }
+  } catch (err) {
+    return { ok: false, msg: err.message || 'Ödeme sunucusuna ulaşılamadı' }
+  }
 }

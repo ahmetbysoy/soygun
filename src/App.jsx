@@ -4,10 +4,12 @@ import {
   db, ROOT, ref, onValue, set, update, get, remove,
   onDisconnect, runTransaction, identity,
 } from './firebase.js'
-import { useEcon, watchAd, claimDailyFree } from './economy.js'
+import { useEcon, getUserLoyalty, claimDailyStreak, claimRakeback } from './economy.js'
 import { walletManager } from './wallet.js'
+import ShopModal from './components/ShopModal.jsx'
+import LoyaltyModal from './components/LoyaltyModal.jsx'
 
-const BUY_IN = 20         // chip — buy-in düşürüldü (tier-3 eCPM'e göre)
+const BUY_IN = 20         // chip — buy-in koltuk bedeli
 const START_BAL = 100     // başlangıç chip
 const SEATS = 4
 
@@ -23,7 +25,21 @@ export default function App() {
   const [walletState, setWalletState] = useState(walletManager.getState())
   const [hearts, setHearts] = useState([])
   const [connecting, setConnecting] = useState(false)
+  const [isShopOpen, setIsShopOpen] = useState(false)
+  const [isLoyaltyOpen, setIsLoyaltyOpen] = useState(false)
+  const [loyaltyData, setLoyaltyData] = useState(null)
   const econ = useEcon()
+
+  const refreshLoyalty = async () => {
+    if (me?.uid) {
+      const data = await getUserLoyalty(me.uid)
+      setLoyaltyData(data)
+    }
+  }
+
+  useEffect(() => {
+    refreshLoyalty()
+  }, [me.uid, bal])
 
   useEffect(() => {
     return walletManager.subscribe(state => {
@@ -70,9 +86,6 @@ export default function App() {
     walletManager.disconnect()
   }
 
-  const ad = async () => { const r = await watchAd(me.uid); if (!r.ok) alert(r.msg) }
-  const amoe = async () => { const r = await claimDailyFree(me.uid); if (!r.ok) alert(r.msg) }
-
   // ── başlangıç: kullanıcı kaydı + hesap senkronizasyonu ──
   useEffect(() => {
     const currentAddr = walletManager.address || `tg_${me.uid}`
@@ -83,6 +96,8 @@ export default function App() {
           name: me.name,
           wallet: currentAddr,
           balance: START_BAL,
+          total_wagered: 0,
+          accumulated_rakeback: 0,
           ts: Date.now(),
         })
       }
@@ -108,7 +123,7 @@ export default function App() {
 
   const isSpec = mySeat < 0 && specs[me.uid]
 
-  // ── masaya otur (ilk gelen, 1 USDT) ──
+  // ── masaya otur ──
   async function joinSeat() {
     if (bal == null || bal < BUY_IN) return alert(`Oturmak için ${BUY_IN} chip gerek (bakiye ${bal})`)
     for (let i = 0; i < SEATS; i++) {
@@ -121,7 +136,7 @@ export default function App() {
         await update(ref(db, `${ROOT}/users/${me.uid}`), { balance: bal - BUY_IN })
         onDisconnect(ref(db, `${ROOT}/table/seats/${i}`)).remove()
         setMySeat(i); setScreen('game')
-        pushFeed(`🪑 ${me.name} ${i + 1}. koltuğa oturdu (-${BUY_IN} USDT)`)
+        pushFeed(`🪑 ${me.name} ${i + 1}. koltuğa oturdu (-${BUY_IN} chip)`)
         return
       }
     }
@@ -162,18 +177,38 @@ export default function App() {
     <div className="app">
       <header>
         <h1>🥷 SOYGUN ÇARKI</h1>
-        <span className="tag">💳 {bal ?? '…'} USDT · 👥 {seatedCount}/4 · 👁 {Object.keys(specs).length}</span>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <span className="tag">💰 {bal ?? '…'} Çip · 👥 {seatedCount}/4</span>
+          <button
+            className="btn sm"
+            style={{
+              background: 'linear-gradient(135deg, #ffd700, #ff9900)',
+              color: '#000',
+              fontWeight: 900,
+              fontSize: '0.72rem',
+              padding: '4px 10px',
+            }}
+            onClick={() => setIsShopOpen(true)}
+          >
+            + ÇİP AL
+          </button>
+        </div>
       </header>
 
+      {/* Kasa & Jackpot & VIP Durum Bandı */}
       <div className="econbar">
-        <span>🏦 Havuz <b>{econ?.prize_pool || 0}</b></span>
-        <span>💸 Ödenen <b>{econ?.paid_chips || 0}</b></span>
-        <span>📺 Gelir <b>{econ?.ad_revenue || 0}</b></span>
-        <span className={((econ?.ad_revenue || 0) - (econ?.paid_chips || 0)) >= 0 ? 'ok' : 'bad'}>
-          Δ {((econ?.ad_revenue || 0) - (econ?.paid_chips || 0))}
+        <span>🏦 Kasa <b>{econ?.prize_pool || 0}</b></span>
+        <span style={{ color: '#ffd75e' }}>🎰 Jackpot <b>{econ?.jackpot_pool || 0}</b></span>
+        <span>
+          👑 VIP <b>{loyaltyData?.vipTier?.badge} {loyaltyData?.vipTier?.name || 'Çaylak'}</b>
         </span>
-        <button className="btn ghost sm" onClick={ad}>📺 Reklam (sim)</button>
-        <button className="btn ghost sm" onClick={amoe}>🎁 Bedava</button>
+        <button
+          className="btn ghost sm"
+          style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
+          onClick={() => setIsLoyaltyOpen(true)}
+        >
+          🎁 VIP & Ganimet ({loyaltyData?.accumulatedRakeback || 0})
+        </button>
       </div>
 
       {screen === 'lobby' ? (
@@ -266,7 +301,7 @@ export default function App() {
             <button className="btn" onClick={joinSeat}>🪑 OTUR — {BUY_IN} chip</button>
             <button className="btn ghost" onClick={spectate}>👁 İZLE + BEĞEN</button>
           </div>
-          <div className="hint">İlk gelen 4 kişi oturur · diğerleri izler & beğenir · koltuk = {BUY_IN} USDT (oyun parası)</div>
+          <div className="hint">İlk gelen 4 kişi oturur · diğerleri izler & beğenir · koltuk = {BUY_IN} chip</div>
         </div>
       ) : (
         <div className="game">
@@ -285,6 +320,26 @@ export default function App() {
           <button className="btn ghost" onClick={leave}>← Lobiden Ayrıl</button>
         </div>
       )}
+
+      {/* Kara Borsa Çip Kasası Modalı */}
+      <ShopModal
+        isOpen={isShopOpen}
+        onClose={() => setIsShopOpen(false)}
+        uid={me.uid}
+        onPurchased={() => {
+          refreshLoyalty()
+        }}
+      />
+
+      {/* VIP & Ganimet Kasası Modalı */}
+      <LoyaltyModal
+        isOpen={isLoyaltyOpen}
+        onClose={() => setIsLoyaltyOpen(false)}
+        uid={me.uid}
+        onClaimed={() => {
+          refreshLoyalty()
+        }}
+      />
     </div>
   )
 }
