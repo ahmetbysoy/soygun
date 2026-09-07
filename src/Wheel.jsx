@@ -2,17 +2,20 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   SEG, N_SEATS, SPIN_MS, useGame, hostSeat, initGameIfMissing,
   placeBet, clearMyBets, advancePhase, injectBotBets, resetGame,
-  now, seatInfo, triggerSpinWithBet, log,
+  now, seatInfo, triggerSpinWithBet, log, sendPlayerTaunt,
 } from './gameSync.js'
 import {
   tick, bassDrop, bombSound, haptic, shake, spinningSound, clackSound,
-  cashRegisterSound, heartbeatSound,
+  cashRegisterSound, heartbeatSound, playAirhorn, playHeistSiren,
+  playCoinCascade, speakStreetVoice, setVoiceMuted, getVoiceMuted,
 } from './core/juice.js'
 import { rngEngine } from './core/RNGEngine.js'
 import { authoritativeClient } from './core/authoritativeClient.js'
 import { VisualFX } from './core/VisualFX.js'
 import { securityEngine } from './core/SecurityEngine.js'
 import ProvablyFairModal from './components/ProvablyFairModal.jsx'
+import ThreeDWheel from './components/ThreeDWheel.jsx'
+import CanvasWheel from './components/CanvasWheel.jsx'
 
 const N = SEG.length
 const SEG_ANGLE = 360 / N // 30 derece
@@ -31,6 +34,9 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
   const [nearMissAlert, setNearMissAlert] = useState('')
   const [provablyProof, setProvablyProof] = useState(null)
   const [isProvablyModalOpen, setIsProvablyModalOpen] = useState(false)
+  const [visualMode, setVisualMode] = useState('2d') // '2d' (Ultra akıcı) | '3d'
+  const [voiceEnabled, setVoiceEnabled] = useState(!getVoiceMuted())
+  const [customTauntText, setCustomTauntText] = useState('')
 
   const rotationRef = useRef(0)
   const lastSpunKeyRef = useRef('')
@@ -38,6 +44,8 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
   const sRef = useRef(null); sRef.current = seats
   const isHost = seat >= 0 && hostSeat(seats) === seat
   const tickTimersRef = useRef([])
+
+  const myBets = (seat >= 0 && game?.bets?.[seat]) ? game.bets[seat] : {}
 
   useEffect(() => { initGameIfMissing() }, [])
 
@@ -157,27 +165,51 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
       const landedSeg = SEG[targetSegIndex]
       setSpinStatusText(`🎯 KAZANAN DİLİM: ${landedSeg.l}`)
 
+      const mySeatBet = myBets[targetSegIndex] || 0
+
       if (landedSeg.t === 0) {
         bombSound()
         haptic('bomb')
         shake('extreme')
         VisualFX.triggerBombBlast(65)
+        VisualFX.triggerChromaticAberration(700)
+        speakStreetVoice('Bombayı koyanın ta amına koyayım, masa patladı!', 'kurt')
       } else if (landedSeg.t === 'S') {
+        playHeistSiren()
         haptic('steal')
         shake('heavy')
         VisualFX.triggerStealVortex(55)
+        VisualFX.triggerChromaticAberration(500)
+        VisualFX.triggerHeistSplash('POT', 'Tilki')
+        speakStreetVoice('Ceplerinizi boşaltın lan, Tilki geldi soydu!', 'tilki')
       } else if (typeof landedSeg.t === 'number' && landedSeg.t >= 5) {
+        playAirhorn()
         bassDrop()
         cashRegisterSound()
+        playCoinCascade(12)
         haptic('jackpot')
         shake('heavy')
         VisualFX.triggerCoinExplosion(90, `x${landedSeg.t} JACKPOT!`)
+        VisualFX.triggerNeonTracerBeams('#ffd700')
+        if (mySeatBet > 0) {
+          const winTot = mySeatBet * landedSeg.t
+          VisualFX.triggerVictorySplash('DEVASA KAZANÇ', winTot, `x${landedSeg.t} ÇARPAN İLE SOYGUN TAMAMLANDI!`)
+          speakStreetVoice('Parayı kokladım mı affetmem amına koyayım, hepsi benim!', 'vega')
+        } else {
+          speakStreetVoice(`Masa alev aldı, x${landedSeg.t} patladı!`, 'announcer')
+        }
       } else {
         cashRegisterSound()
         haptic('win')
         shake('medium')
         if (typeof landedSeg.t === 'number' && landedSeg.t > 0) {
+          playCoinCascade(6)
           VisualFX.triggerCoinExplosion(45, `x${landedSeg.t} KAZANÇ`)
+          VisualFX.triggerNeonTracerBeams(landedSeg.c || '#ffd700')
+          if (mySeatBet > 0) {
+            VisualFX.triggerVictorySplash('KAZANDIN!', mySeatBet * landedSeg.t, 'KASAYI VURDUN, DEVAM ET!')
+            speakStreetVoice('Temiz vuruş, para akıyor!', 'vega')
+          }
         }
       }
 
@@ -301,7 +333,6 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
 
   if (!game) return <div className="statusband">⏳ masa kuruluyor…</div>
 
-  const myBets = seat >= 0 ? (game.bets?.[seat] || {}) : {}
   const remain = Math.max(0, Math.ceil((game.phaseUntil - now()) / 1000))
 
   const band = isSpinning
@@ -318,28 +349,6 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
               ? ['win', `🎯 SONUÇ: ${game.segResult != null ? SEG[game.segResult].l : ''}`]
               : ['', '']
 
-  // Dilim yaylarını oluştur
-  const arcs = SEG.map((s, i) => {
-    const a0 = (i * SEG_ANGLE - 90) * Math.PI / 180
-    const a1 = ((i + 1) * SEG_ANGLE - 90) * Math.PI / 180
-    const x0 = 100 + 96 * Math.cos(a0), y0 = 100 + 96 * Math.sin(a0)
-    const x1 = 100 + 96 * Math.cos(a1), y1 = 100 + 96 * Math.sin(a1)
-    const mid = (i * SEG_ANGLE + SEG_ANGLE / 2 - 90) * Math.PI / 180
-    return {
-      s,
-      i,
-      d: `M100,100 L${x0},${y0} A96,96 0 0,1 ${x1},${y1} Z`,
-      tx: 100 + 66 * Math.cos(mid),
-      ty: 100 + 66 * Math.sin(mid),
-    }
-  })
-
-  // .wheelbox için doğrudan CSS rotasyon ve yavaşlama stili
-  const wheelboxStyle = {
-    transform: `rotate(${currentRotation}deg)`,
-    '--spin-duration': `${SPIN_MS}ms`,
-  }
-
   const feedLines = Object.values(game.feed || {}).sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 8)
   const centerDisplayLabel = isSpinning
     ? '🌀'
@@ -353,65 +362,101 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
 
   return (
     <div className="wheelwrap">
-      {/* Çark Sahnesi: İğne tepede sabit, merkez göbek ortada sabit, sadece wheelbox döner */}
-      <div className="wheel-stage">
-        {/* İğne çarkın tepesinde sabit kalır */}
-        <div className={`pointer ${pointerFlick ? 'flick' : ''}`} />
-
-        {/* CSS GPU-Animasyonlu .wheelbox Elemanı */}
-        <div
-          className={`wheelbox ${isSpinning ? 'spinning' : ''}`}
-          style={wheelboxStyle}
-        >
-          <svg viewBox="0 0 200 200">
-            <g>
-              {arcs.map(a => (
-                <g
-                  key={a.i}
-                  onClick={() => handlePlaceBet(a.i, false)}
-                  style={{
-                    cursor: isSpinning ? 'not-allowed' : 'pointer',
-                    opacity: isSpinning && activeWinSeg != null && activeWinSeg !== a.i ? 0.85 : 1,
-                  }}
-                >
-                  <path d={a.d} fill={a.s.c} stroke="#0b0e14" strokeWidth="1.5" />
-                  <text
-                    x={a.tx}
-                    y={a.ty}
-                    fill="#fff"
-                    fontSize="11"
-                    fontWeight="800"
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    transform={`rotate(${a.i * SEG_ANGLE + SEG_ANGLE / 2} ${a.tx} ${a.ty})`}
-                  >
-                    {a.s.l}
-                  </text>
-                  {(myBets[a.i] || 0) > 0 && (
-                    <text
-                      x={a.tx}
-                      y={a.ty + 12}
-                      fill="#ffd75e"
-                      fontSize="7"
-                      fontWeight="800"
-                      textAnchor="middle"
-                    >
-                      {myBets[a.i]}
-                    </text>
-                  )}
-                </g>
-              ))}
-            </g>
-          </svg>
+      {/* 3D / 2D Görsel Motor Modu Değiştirici */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', maxWidth: '420px', padding: '0 4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: '0.68rem', color: 'var(--dim)', fontWeight: 700 }}>MOTOR:</span>
+          <button
+            className="btn ghost sm"
+            style={{
+              padding: '2px 8px',
+              fontSize: '0.68rem',
+              borderColor: visualMode === '3d' ? 'var(--gold)' : '#2a3346',
+              color: visualMode === '3d' ? 'var(--gold2)' : 'var(--dim)',
+              background: visualMode === '3d' ? '#1c2331' : 'transparent',
+              fontWeight: 800,
+            }}
+            onClick={() => setVisualMode('3d')}
+          >
+            🎮 3D WebGL
+          </button>
+          <button
+            className="btn ghost sm"
+            style={{
+              padding: '2px 8px',
+              fontSize: '0.68rem',
+              borderColor: visualMode === '2d' ? 'var(--gold)' : '#2a3346',
+              color: visualMode === '2d' ? 'var(--gold2)' : 'var(--dim)',
+              background: visualMode === '2d' ? '#1c2331' : 'transparent',
+              fontWeight: 800,
+            }}
+            onClick={() => setVisualMode('2d')}
+          >
+            ⚡ 2D Vektör
+          </button>
         </div>
-
-        {/* Merkez Göbek (Statik ve kristal netliğinde, çarkın dönüşünden bağımsız dik durur) */}
-        <div className="hub">
-          <div className="core">
-            <div className="mult">{centerDisplayLabel}</div>
-            <div className="sub">TUR {game.round || 1} · POT {game.pot || 0}</div>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            className="btn ghost sm"
+            style={{
+              padding: '2px 8px',
+              fontSize: '0.68rem',
+              borderColor: voiceEnabled ? '#00e575' : '#475569',
+              color: voiceEnabled ? '#00e575' : '#64748b',
+              background: voiceEnabled ? 'rgba(0,229,117,0.1)' : 'transparent',
+              fontWeight: 800,
+            }}
+            onClick={() => {
+              const next = !voiceEnabled
+              setVoiceEnabled(next)
+              setVoiceMuted(!next)
+              if (next) speakStreetVoice('Racon modu aktif, ses ver!', 'vega')
+            }}
+          >
+            {voiceEnabled ? '🔊 RACON SESİ: AÇIK' : '🔇 SES: KAPALI'}
+          </button>
+          <span style={{ fontSize: '0.68rem', color: '#00e575', fontWeight: 800 }}>
+            {visualMode === '3d' ? '● 3D Modu' : '● Ultra Hızlı (Donmasız)'}
+          </span>
         </div>
+      </div>
+
+      {/* Çark Sahnesi: 3D Three.js veya Yüksek Performanslı 2D Canvas */}
+      <div className="wheel-stage" style={{ minHeight: '360px' }}>
+        {visualMode === '3d' ? (
+          <ThreeDWheel
+            isSpinning={isSpinning}
+            targetSegIndex={activeWinSeg}
+            currentRotationDeg={currentRotation}
+            onSelectSegment={(segIdx) => handlePlaceBet(segIdx, false)}
+            myBets={myBets}
+            activeWinSeg={activeWinSeg}
+            spinDurationMs={SPIN_MS}
+          />
+        ) : (
+          <>
+            {/* İğne çarkın tepesinde sabit kalır */}
+            <div className={`pointer ${pointerFlick ? 'flick' : ''}`} />
+
+            {/* Yüksek Performanslı Canvas Çark (CSS GPU-Accelerated Transform) */}
+            <CanvasWheel
+              isSpinning={isSpinning}
+              currentRotation={currentRotation}
+              activeWinSeg={activeWinSeg}
+              myBets={myBets}
+              onSelectSegment={(segIdx) => handlePlaceBet(segIdx, false)}
+              spinDurationMs={SPIN_MS}
+            />
+
+            {/* Merkez Göbek (Statik ve kristal netliğinde, çarkın dönüşünden bağımsız dik durur) */}
+            <div className="hub">
+              <div className="core">
+                <div className="mult">{centerDisplayLabel}</div>
+                <div className="sub">TUR {game.round || 1} · POT {game.pot || 0}</div>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className={`statusband ${band[0]}`}>
@@ -547,13 +592,35 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
         roundNumber={game?.round}
       />
 
-      {/* Masa Koltukları */}
+      {/* Masa Koltukları & Canlı Bot Psikolojisi */}
       <div className="seatgrid">
         {Array.from({ length: N_SEATS }, (_, i) => {
           const p = seatInfo(i, seats)
+          const botState = game.botStates?.[i]
+          const isTilt = botState?.isTilt
+          const isSniper = botState?.isSniper
+          const bubble = game.chatBubbles?.[i]
+          const isBubbleActive = bubble && (now() - (bubble.ts || 0) < 5500)
+
           return (
-            <div key={i} className={`seat ${game.out?.[i] ? 'out' : 'full'} ${i === seat ? 'me' : ''}`}>
+            <div
+              key={i}
+              className={`seat ${game.out?.[i] ? 'out' : 'full'} ${i === seat ? 'me' : ''} ${isTilt ? 'is-tilt' : ''} ${isSniper ? 'is-sniper' : ''}`}
+            >
+              {/* Konuşma Balonu */}
+              {isBubbleActive && (
+                <div className={`chat-bubble ${bubble.type || 'normal'}`}>
+                  {bubble.text}
+                </div>
+              )}
+
+              {/* Liderlik Tacı */}
               {i === hostSeat(seats) && <span className="badge">👑</span>}
+
+              {/* Bot Durum Rozetleri */}
+              {isTilt && <span className="tilt-badge">🔥 TILT</span>}
+              {isSniper && <span className="sniper-badge">🎯 PUSUDA</span>}
+
               <div className="sava">{p.ava}</div>
               <div className="sname">{p.name}{i === seat ? ' (sen)' : ''}</div>
               <div className="slike">🪙 {game.chips?.[i] ?? 0}</div>
@@ -567,6 +634,73 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
             </div>
           )
         })}
+      </div>
+
+      {/* 🗣️ Sokak Raconu & Hızlı Taunt Çubuğu */}
+      <div className="taunt-bar-wrap">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.68rem', color: 'var(--gold2)', fontWeight: 800 }}>
+            🗣️ SOKAĞIN SESİ · RACON KES:
+          </span>
+          <span style={{ fontSize: '0.62rem', color: 'var(--dim)' }}>
+            Botların tansiyonunu yükselt
+          </span>
+        </div>
+
+        <div className="taunt-preset-row">
+          {[
+            { l: '💰 Parayı Kokladım!', m: 'Paranın kokusunu aldım, bu el benim!' },
+            { l: '🥷 Hepinizi Soydum!', m: 'Ceplerinizi boşaltın lan, masa temizlendi!' },
+            { l: '🔥 Geri Vites Yok!', m: 'Siktir et tedbiri, her şeyi vuruyorum!' },
+            { l: '🎯 Pusuya Düşmeyin!', m: 'Göz açıp kapayana kadar pot cebe indi!' },
+            { l: '👑 Masa Benim!', m: 'Dağılın beyler, kral masada!' },
+          ].map((item, idx) => (
+            <button
+              key={idx}
+              className="taunt-preset-btn"
+              onClick={() => {
+                sendPlayerTaunt(seat >= 0 ? seat : 0, item.m, meName || 'Sen')
+                speakStreetVoice(item.m, 'vega')
+                haptic('win')
+              }}
+            >
+              {item.l}
+            </button>
+          ))}
+        </div>
+
+        <div className="taunt-input-row">
+          <input
+            className="taunt-input"
+            type="text"
+            placeholder="Masaya racon kes veya laf at..."
+            value={customTauntText}
+            onChange={e => setCustomTauntText(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && customTauntText.trim()) {
+                const txt = customTauntText.trim()
+                sendPlayerTaunt(seat >= 0 ? seat : 0, txt, meName || 'Sen')
+                speakStreetVoice(txt, 'vega')
+                setCustomTauntText('')
+                haptic('win')
+              }
+            }}
+          />
+          <button
+            className="taunt-send-btn"
+            onClick={() => {
+              if (customTauntText.trim()) {
+                const txt = customTauntText.trim()
+                sendPlayerTaunt(seat >= 0 ? seat : 0, txt, meName || 'Sen')
+                speakStreetVoice(txt, 'vega')
+                setCustomTauntText('')
+                haptic('win')
+              }
+            }}
+          >
+            Gönder
+          </button>
+        </div>
       </div>
 
       {/* Canlı Akış Feed */}

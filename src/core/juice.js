@@ -244,3 +244,140 @@ export function shake(intensity = 'medium') {
     }
   }, 16)
 }
+
+// ── 🎺 STREET AIRHORN (Zafer / Jackpot Trompeti) ──────────────
+export function playAirhorn() {
+  try {
+    const a = ac(), t = a.currentTime
+    const freqs = [466.16, 466.16, 311.13, 370.0, 466.16] // Bb4, Eb4, F#4, Bb4
+    const times = [0, 0.12, 0.28, 0.42, 0.58]
+    const durs  = [0.09, 0.11, 0.11, 0.12, 0.38]
+
+    freqs.forEach((f, i) => {
+      const st = t + times[i]
+      const dur = durs[i]
+      const o1 = a.createOscillator()
+      const o2 = a.createOscillator()
+      const g = a.createGain()
+
+      o1.type = 'sawtooth'
+      o2.type = 'square'
+      o1.frequency.setValueAtTime(f, st)
+      o2.frequency.setValueAtTime(f * 1.008, st)
+
+      g.gain.setValueAtTime(0.0001, st)
+      g.gain.linearRampToValueAtTime(0.35, st + 0.015)
+      g.gain.exponentialRampToValueAtTime(0.0001, st + dur)
+
+      o1.connect(g); o2.connect(g); g.connect(a.destination)
+      o1.start(st); o1.stop(st + dur + 0.02)
+      o2.start(st); o2.stop(st + dur + 0.02)
+    })
+  } catch (e) {}
+}
+
+// ── 🚨 HEIST POLICE SIREN (Soygun / Steal Efekti) ──────────────
+export function playHeistSiren() {
+  try {
+    const a = ac(), t = a.currentTime
+    const o = a.createOscillator()
+    const g = a.createGain()
+
+    o.type = 'sawtooth'
+    // İki döngülü yukarı-aşağı frekans sweep
+    o.frequency.setValueAtTime(600, t)
+    o.frequency.linearRampToValueAtTime(1250, t + 0.35)
+    o.frequency.linearRampToValueAtTime(600, t + 0.70)
+    o.frequency.linearRampToValueAtTime(1300, t + 1.05)
+    o.frequency.linearRampToValueAtTime(550, t + 1.45)
+
+    g.gain.setValueAtTime(0.0001, t)
+    g.gain.linearRampToValueAtTime(0.28, t + 0.05)
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.5)
+
+    o.connect(g); g.connect(a.destination)
+    o.start(t); o.stop(t + 1.55)
+  } catch (e) {}
+}
+
+// ── 🪙 COIN CASCADE STREAM (Hızlı Şelale Çip Sesi) ──────────────
+export function playCoinCascade(count = 8) {
+  try {
+    const a = ac(), t = a.currentTime
+    for (let i = 0; i < count; i++) {
+      const st = t + i * 0.05 + Math.random() * 0.02
+      const freq = 1200 + Math.random() * 1600
+      const o = a.createOscillator()
+      const g = a.createGain()
+      o.type = 'sine'
+      o.frequency.setValueAtTime(freq, st)
+      o.frequency.exponentialRampToValueAtTime(freq * 0.5, st + 0.08)
+
+      g.gain.setValueAtTime(0.0001, st)
+      g.gain.linearRampToValueAtTime(0.18, st + 0.008)
+      g.gain.exponentialRampToValueAtTime(0.0001, st + 0.1)
+
+      o.connect(g); g.connect(a.destination)
+      o.start(st); o.stop(st + 0.12)
+    }
+  } catch (e) {}
+}
+
+// ── 🗣️ SOKAĞIN SESİ (Web Speech Sentezleyici & Sesli Racon) ────
+let isVoiceMuted = false
+export function setVoiceMuted(muted) {
+  isVoiceMuted = muted
+}
+export function getVoiceMuted() {
+  return isVoiceMuted
+}
+
+export function speakStreetVoice(text, role = 'vega') {
+  if (isVoiceMuted || typeof window === 'undefined' || !window.speechSynthesis) return
+
+  try {
+    // Önceki konuşmayı kesip anında girsin
+    window.speechSynthesis.cancel()
+
+    // Temiz metin
+    const cleanText = text.replace(/^[^\w\sğüşöçıİĞÜŞÖÇ]+/, '').trim()
+    const utter = new SpeechSynthesisUtterance(cleanText)
+
+    utter.lang = 'tr-TR'
+
+    // Role göre ses modülasyonu
+    switch (role) {
+      case 'vega': // Derin, tok, kendinden emin mafya babası
+        utter.pitch = 0.8
+        utter.rate = 1.12
+        break
+      case 'kurt': // Soğuk, hesapçı, robotik
+        utter.pitch = 0.95
+        utter.rate = 1.0
+        break
+      case 'tilki': // Hızlı, tiz, sinsi hırsız
+        utter.pitch = 1.35
+        utter.rate = 1.28
+        break
+      case 'zehra': // Keskin, soğukkanlı tetikçi
+        utter.pitch = 1.15
+        utter.rate = 1.18
+        break
+      case 'announcer': // Gaz verici casino spikeri
+        utter.pitch = 0.88
+        utter.rate = 1.08
+        break
+      default:
+        utter.pitch = 1.0
+        utter.rate = 1.1
+    }
+
+    // Sistemdeki Türkçe sesleri bul
+    const voices = window.speechSynthesis.getVoices()
+    const trVoice = voices.find(v => v.lang.includes('tr') || v.lang.includes('TR'))
+    if (trVoice) utter.voice = trVoice
+
+    window.speechSynthesis.speak(utter)
+  } catch (e) {}
+}
+

@@ -82,6 +82,18 @@ export function log(msg, cls = '') {
   update(ref(db, `${ROOT}/table/game/feed`), { [now()]: { m: msg, cls } })
 }
 
+// ── Canlı Konuşma Balonu & Racon Yayınlama ──
+export function broadcastBubble(seat, text, type = 'normal') {
+  update(ref(db, `${ROOT}/table/game/chatBubbles`), {
+    [seat]: { text, ts: now(), type }
+  })
+}
+
+export function sendPlayerTaunt(seat, text, playerName = 'Sen') {
+  broadcastBubble(seat, text, 'player')
+  log(`🗣️ ${playerName}: "${text}"`, 'y')
+}
+
 // ── bahis yaz (herkes kendi koltuğu için çağırır) ──
 export function placeBet(seat, seg, amount) {
   return runTransaction(ref(db, `${ROOT}/table/game/bets/${seat}/${seg}`), cur => (cur || 0) + amount)
@@ -93,6 +105,7 @@ export function clearMyBets(seat) {
 // ── SADECE HOST çağırır: bot bahsi enjekte et ──
 export function injectBotBets(game, seats) {
   const timeLeftMs = Math.max(0, (game.phaseUntil || 0) - now())
+  const botStatesPatch = {}
 
   for (let i = 0; i < N_SEATS; i++) {
     if (seats[i]) continue                       // gerçek oyuncu → bot değil
@@ -100,9 +113,20 @@ export function injectBotBets(game, seats) {
 
     const brain = botBrains[i]
 
-    // Chaser/Sniper bot son 3 saniyede %80 oranında baskı kurar
+    // Chaser/Sniper bot son 3 saniyede %85 oranında pusuya yatar
     const isSniperTime = brain.style === 'chaser' && timeLeftMs <= 3200
-    if (!isSniperTime && Math.random() >= 0.35) continue
+    const isTilt = brain.checkTiltStatus()
+
+    botStatesPatch[i] = {
+      isTilt,
+      isSniper: isSniperTime,
+      style: brain.style,
+      name: brain.profile.name,
+      title: brain.profile.title,
+      avatar: brain.profile.avatar,
+    }
+
+    if (!isSniperTime && !isTilt && Math.random() >= 0.38) continue
 
     const spent = Object.values(game.bets?.[i] || {}).reduce((a, x) => a + x, 0)
     const bankroll = (game.chips?.[i] ?? 0) - spent
@@ -113,11 +137,26 @@ export function injectBotBets(game, seats) {
 
     if (amt > 0) {
       placeBet(i, segIdx, amt)
-      // Sniper son saniye taunt'u
-      if (isSniperTime && Math.random() < 0.4) {
-        log(brain.getRandomTaunt('snipe'), 'y')
+      
+      // Sniper son saniye taunt'u & Konuşma Balonu
+      if (isSniperTime && Math.random() < 0.6) {
+        const taunt = brain.getRandomTaunt('snipe')
+        log(taunt, 'y')
+        broadcastBubble(i, brain.currentBubble || '🎯 PUSUYA DÜŞTÜNÜZ!', 'snipe')
+      } else if (isTilt && Math.random() < 0.25) {
+        const taunt = brain.getRandomTaunt('tilt')
+        log(taunt, 'r')
+        broadcastBubble(i, brain.currentBubble || '🔥 HER ŞEYİ MASAYA VURUYORUM!', 'tilt')
+      } else if (Math.random() < 0.08) {
+        const taunt = brain.getRandomTaunt('chat')
+        log(taunt, 'p')
+        broadcastBubble(i, brain.currentBubble, 'chat')
       }
     }
+  }
+
+  if (Object.keys(botStatesPatch).length > 0) {
+    update(ref(db, `${ROOT}/table/game/botStates`), botStatesPatch).catch(() => {})
   }
 }
 
@@ -256,15 +295,17 @@ async function settlePhase(game, pool, seats = {}) {
         }).catch(() => {})
       }
     } else {
-      // 🤖 Bot Zekası Sonuç Kaydı & Tilt / Galibiyet Tepkisi
+      // 🤖 Bot Zekası Sonuç Kaydı & Tilt / Galibiyet / Soygun / Bomba Tepkisi
       const brain = botBrains[i]
       if (brain) {
         const betAmt = seatTotalBet(i)
         const winAmt = seatWins[i] || 0
         const won = winAmt > betAmt
-        const taunt = brain.recordRoundResult(won, winAmt, Math.max(0, betAmt - winAmt))
-        if (taunt && (brain.isTilt || Math.random() < 0.35)) {
-          log(taunt, brain.isTilt ? 'r' : 'g')
+        const taunt = brain.recordRoundResult(won, winAmt, Math.max(0, betAmt - winAmt), seg.t)
+        if (taunt && (brain.isTilt || won || Math.random() < 0.65)) {
+          const colorCls = brain.isTilt ? 'r' : (seg.t === 'S' && won ? 'p' : (won ? 'g' : 'r'))
+          log(taunt, colorCls)
+          broadcastBubble(i, brain.currentBubble || taunt, brain.isTilt ? 'tilt' : (won ? 'win' : 'loss'))
         }
       }
     }

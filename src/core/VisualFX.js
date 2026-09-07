@@ -315,4 +315,179 @@ export class VisualFX {
       setTimeout(() => badge.remove(), 700)
     }, 1200)
   }
+
+  /**
+   * Chromatic Aberration & Ekran Titremesi (Glitch & RGB Split)
+   */
+  static triggerChromaticAberration(durationMs = 600) {
+    const el = document.body
+    el.style.filter = 'drop-shadow(-3px 0px 0px rgba(255,0,0,0.7)) drop-shadow(3px 0px 0px rgba(0,255,255,0.7))'
+    el.style.transition = 'filter 0.08s ease'
+
+    setTimeout(() => {
+      el.style.filter = 'none'
+    }, durationMs)
+  }
+
+  /**
+   * Neon Işık Hüzmesi (Tracer Ray Beam)
+   */
+  static triggerNeonTracerBeams(color = '#ffd700') {
+    const canvas = this.getCanvas()
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const cx = canvas.width / 2
+    const cy = canvas.height / 2
+    const rayCount = 16
+    let stepCount = 0
+
+    function drawRays() {
+      if (stepCount > 25) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+        return
+      }
+
+      ctx.save()
+      ctx.globalAlpha = Math.max(0, 1 - stepCount / 25)
+      ctx.strokeStyle = color
+      ctx.lineWidth = 3
+      ctx.shadowColor = color
+      ctx.shadowBlur = 20
+
+      for (let i = 0; i < rayCount; i++) {
+        const angle = (i / rayCount) * Math.PI * 2 + (stepCount * 0.05)
+        const length = 100 + stepCount * 25
+        ctx.beginPath()
+        ctx.moveTo(cx, cy)
+        ctx.lineTo(cx + Math.cos(angle) * length, cy + Math.sin(angle) * length)
+        ctx.stroke()
+      }
+      ctx.restore()
+
+      stepCount++
+      requestAnimationFrame(drawRays)
+    }
+
+    drawRays()
+  }
+
+  /**
+   * 🏆 ZAFER & JACKPOT EKRAN PATLAMASI (Victory Splash Overlay)
+   */
+  static triggerVictorySplash(title = 'BÜYÜK KAZANÇ', amount = '1000', subtitle = 'PARANIN KOKUSU MASAYI SARDI') {
+    const oldSplash = document.getElementById('victory-splash-modal')
+    if (oldSplash) oldSplash.remove()
+
+    const overlay = document.createElement('div')
+    overlay.id = 'victory-splash-modal'
+    overlay.style.position = 'fixed'
+    overlay.style.inset = '0'
+    overlay.style.zIndex = '99999'
+    overlay.style.pointerEvents = 'none'
+    overlay.style.display = 'flex'
+    overlay.style.flexDirection = 'column'
+    overlay.style.alignItems = 'center'
+    overlay.style.justifyContent = 'center'
+    overlay.style.background = 'radial-gradient(circle at center, rgba(255,215,0,0.18) 0%, rgba(5,7,12,0.85) 75%)'
+    overlay.style.opacity = '0'
+    overlay.style.transform = 'scale(0.8)'
+    overlay.style.transition = 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+
+    overlay.innerHTML = `
+      <div style="
+        background: linear-gradient(135deg, #18202d, #090e17);
+        border: 2px solid #ffd700;
+        border-radius: 20px;
+        padding: 24px 36px;
+        text-align: center;
+        box-shadow: 0 0 50px rgba(255, 215, 0, 0.6), inset 0 0 25px rgba(255, 215, 0, 0.2);
+        max-width: 90%;
+        animation: pulse 1s infinite;
+      ">
+        <div style="font-size: 0.85rem; font-weight: 900; letter-spacing: 3px; color: #ffd700; text-transform: uppercase; margin-bottom: 6px;">
+          👑 ${title}
+        </div>
+        <div style="font-size: 2.8rem; font-weight: 900; color: #fff; text-shadow: 0 0 25px #ffd700; font-family: monospace; line-height: 1.1;">
+          +🪙${amount}
+        </div>
+        <div style="font-size: 0.78rem; font-weight: 800; color: #00e575; letter-spacing: 1px; margin-top: 10px;">
+          ${subtitle}
+        </div>
+      </div>
+    `
+
+    document.body.appendChild(overlay)
+
+    requestAnimationFrame(() => {
+      overlay.style.opacity = '1'
+      overlay.style.transform = 'scale(1)'
+    })
+
+    setTimeout(() => {
+      overlay.style.opacity = '0'
+      overlay.style.transform = 'scale(1.1)'
+      setTimeout(() => overlay.remove(), 400)
+    }, 2400)
+  }
+
+  /**
+   * 🥷 SOYGUN ANİMASYONU (Heist Splash Overlay)
+   */
+  static triggerHeistSplash(amount = '500', robberName = 'Tilki') {
+    const oldSplash = document.getElementById('heist-splash-modal')
+    if (oldSplash) oldSplash.remove()
+
+    const overlay = document.createElement('div')
+    overlay.id = 'heist-splash-modal'
+    overlay.style.position = 'fixed'
+    overlay.style.inset = '0'
+    overlay.style.zIndex = '99999'
+    overlay.style.pointerEvents = 'none'
+    overlay.style.display = 'flex'
+    overlay.style.flexDirection = 'column'
+    overlay.style.alignItems = 'center'
+    overlay.style.justifyContent = 'center'
+    overlay.style.background = 'radial-gradient(circle at center, rgba(224,102,255,0.2) 0%, rgba(10,5,15,0.85) 75%)'
+    overlay.style.opacity = '0'
+    overlay.style.transform = 'scale(0.8)'
+    overlay.style.transition = 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+
+    overlay.innerHTML = `
+      <div style="
+        background: linear-gradient(135deg, #24122d, #0f0714);
+        border: 2px solid #e066ff;
+        border-radius: 20px;
+        padding: 22px 34px;
+        text-align: center;
+        box-shadow: 0 0 50px rgba(224, 102, 255, 0.6), inset 0 0 25px rgba(224, 102, 255, 0.2);
+        max-width: 90%;
+      ">
+        <div style="font-size: 0.85rem; font-weight: 900; letter-spacing: 3px; color: #e066ff; text-transform: uppercase; margin-bottom: 6px;">
+          🥷 KUSURSUZ SOYGUN!
+        </div>
+        <div style="font-size: 2.5rem; font-weight: 900; color: #fff; text-shadow: 0 0 25px #e066ff; font-family: monospace; line-height: 1.1;">
+          +🪙${amount} ÇALINDI
+        </div>
+        <div style="font-size: 0.78rem; font-weight: 800; color: #ff99cc; letter-spacing: 1px; margin-top: 10px;">
+          ${robberName} MASAYI KURU SAÇTI!
+        </div>
+      </div>
+    `
+
+    document.body.appendChild(overlay)
+
+    requestAnimationFrame(() => {
+      overlay.style.opacity = '1'
+      overlay.style.transform = 'scale(1)'
+    })
+
+    setTimeout(() => {
+      overlay.style.opacity = '0'
+      overlay.style.transform = 'scale(1.1)'
+      setTimeout(() => overlay.remove(), 400)
+    }, 2200)
+  }
 }
+
+
