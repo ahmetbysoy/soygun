@@ -23,6 +23,7 @@ import Chip3DStack from './components/Chip3DStack.jsx'
 import LottieAnimationOverlay from './components/LottieAnimationOverlay.jsx'
 import { spawnWinParticles } from './core/PixiParticles.js'
 import { dynamicAudio } from './core/DynamicAudioEngine.js'
+import { realTimeRevenueDashboard } from './core/revenueTracker.js'
 import { walletManager } from './wallet.js'
 import { SpectatorCrowdEngine } from './core/spectatorCrowd.js'
 import { marketRateStreamer, getDynamicHouseEdge } from './economy.js'
@@ -34,7 +35,7 @@ const SEG_ANGLE = 360 / N // 30 derece
 /* ═══ SOYGUN ÇARKI · Single-Context HTML5 Canvas & Physics Render Engine ═══
    requestAnimationFrame tabanlı bağımsız render döngüsü, rotasyonel fizik
    (açısal hız ve sürtünme) ve 60/120 FPS sıfır frame-drop garantisi. */
-export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
+export default function Wheel({ seat = -1, seats = {}, meName, uid, bal, onOpenShop, onAutoSeat }) {
   const game = useGame()
   const [wheelMode, setWheelMode] = useState('3d') // '3d' | '2d'
   const [lottieEvent, setLottieEvent] = useState(null)
@@ -326,6 +327,18 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
     }
   }, [game?.phase, game?.segResult, game?.phaseUntil, game?.round, executeWheelSpin])
 
+  const handleQuickReload = async () => {
+    const reloadAmount = 1000
+    const currentSeat = seat >= 0 ? seat : 0
+    await runTransaction(ref(db, `${ROOT}/table/game/chips/${currentSeat}`), c => (c || 0) + reloadAmount)
+    await update(ref(db, `${ROOT}/table/game/out`), { [currentSeat]: false })
+    if (uid) {
+      await runTransaction(ref(db, `${ROOT}/users/${uid}/balance`), c => (c || 0) + reloadAmount)
+    }
+    log(`💰 ${meName || 'Oyuncu'} masaya +${reloadAmount} çip taze nakit indirdi!`, 'g')
+    haptic('win')
+  }
+
   // BAHİS VE ANINDA ÇEVİRME MOTORU (Atomik Kilitli & Hızlı Tıklama Korumalı)
   const handlePlaceBet = async (segIdx, autoSpin = false) => {
     if (isSpinning) return
@@ -358,12 +371,24 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
       haptic('bet')
       tick()
 
-      // Yetersiz bakiye kontrolü
-      const currentChips = (game?.chips?.[currentSeat]) ?? 0
+      // Yetersiz bakiye kontrolü & Otomatik Çip Senkronizasyonu
+      let currentChips = (game?.chips?.[currentSeat]) ?? 0
       if (currentChips < chip) {
-        log(`⚠️ Yetersiz çip! Mevcut: ${currentChips}, Gerekli: ${chip}`, 'r')
-        haptic('bomb')
-        return
+        // Eğer oyuncunun global bakiyesinde para varsa masadaki çipe transfer et
+        const availableBal = (bal != null && bal > 0) ? bal : 1500
+        if (availableBal >= chip) {
+          currentChips = availableBal
+          await update(ref(db, `${ROOT}/table/game/chips`), { [currentSeat]: availableBal })
+          await update(ref(db, `${ROOT}/table/game/out`), { [currentSeat]: false })
+        } else {
+          // Otomatik sokak kurtarma sermayesi ver (+1500 çip)
+          const rescueFund = 1500
+          currentChips = rescueFund
+          await update(ref(db, `${ROOT}/table/game/chips`), { [currentSeat]: rescueFund })
+          await update(ref(db, `${ROOT}/table/game/out`), { [currentSeat]: false })
+          if (uid) await update(ref(db, `${ROOT}/users/${uid}`), { balance: rescueFund }).catch(() => {})
+          log(`⚡ MAHALLE SİPERİ: Masadaki çipin +1500 olarak yenilendi!`, 'g')
+        }
       }
 
       // Bahsi masaya koy
@@ -572,6 +597,25 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
             style={{
               padding: '2px 8px',
               fontSize: '0.68rem',
+              borderColor: 'rgba(0, 229, 117, 0.4)',
+              color: '#00e575',
+              background: 'rgba(0, 229, 117, 0.12)',
+              fontWeight: 800,
+            }}
+            onClick={(e) => {
+              e.stopPropagation()
+              realTimeRevenueDashboard()
+              haptic('tick')
+            }}
+          >
+            ⚡ HASILAT / GİDER
+          </button>
+
+          <button
+            className="btn ghost sm"
+            style={{
+              padding: '2px 8px',
+              fontSize: '0.68rem',
               borderColor: voiceEnabled ? '#00e575' : '#475569',
               color: voiceEnabled ? '#00e575' : '#64748b',
               background: voiceEnabled ? 'rgba(0,229,117,0.1)' : 'transparent',
@@ -623,6 +667,57 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
         </div>
       </div>
 
+      {/* ⚡ Dynamic Difficulty Adjustment (DDA) Canlı Zorluk & Beceri Barı */}
+      {game?.ddaState && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          width: '100%',
+          maxWidth: '420px',
+          padding: '3px 10px',
+          background: game.ddaState.level === 'HONEYMOON'
+            ? 'linear-gradient(90deg, rgba(0, 229, 117, 0.15), rgba(245, 179, 1, 0.12))'
+            : game.ddaState.level === 'CARTEL_HELL'
+            ? 'linear-gradient(90deg, rgba(255, 51, 68, 0.25), rgba(160, 92, 230, 0.2))'
+            : 'rgba(30, 41, 59, 0.65)',
+          border: `1px solid ${
+            game.ddaState.level === 'HONEYMOON' ? '#00e575' :
+            game.ddaState.level === 'CARTEL_HELL' ? '#ff3344' : '#f5b301'
+          }`,
+          borderRadius: '6px',
+          fontSize: '0.67rem',
+          backdropFilter: 'blur(4px)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span style={{ fontSize: '0.85rem' }}>{game.ddaState.badge || '🎯'}</span>
+            <b style={{
+              color: game.ddaState.level === 'HONEYMOON' ? '#00e575' :
+                     game.ddaState.level === 'CARTEL_HELL' ? '#ff3344' : '#f5b301',
+              letterSpacing: '0.3px',
+            }}>
+              {game.ddaState.levelName || 'DDA AKTİF'}
+            </b>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ color: '#94a3b8' }}>Beceri:</span>
+            <span style={{ color: '#fff', fontWeight: 800 }}>{game.ddaState.skillScore || 10}/100</span>
+            {game.ddaState.botIntentionalMiss && (
+              <span style={{
+                background: 'rgba(0,229,117,0.2)',
+                color: '#00e575',
+                padding: '1px 5px',
+                borderRadius: '4px',
+                fontSize: '0.6rem',
+                fontWeight: 800,
+              }}>
+                🍯 ÇAYLAK BALI
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Çark Sahnesi: Three.js 3D WebGL veya 2D Canvas */}
       <div className="wheel-stage" style={{ minHeight: '360px', position: 'relative' }}>
         {wheelMode === '3d' ? (
@@ -664,6 +759,63 @@ export default function Wheel({ seat = -1, seats = {}, meName, onAutoSeat }) {
           {nearMissAlert}
         </div>
       )}
+
+      {/* Canlı Oyuncu Çip Bilgisi & Hızlı Takviye */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        width: '100%',
+        maxWidth: '420px',
+        background: 'rgba(255, 215, 0, 0.08)',
+        border: '1px solid rgba(255, 215, 0, 0.25)',
+        borderRadius: '8px',
+        padding: '6px 12px',
+        marginTop: '2px',
+        fontSize: '0.78rem',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ color: 'var(--dim)', fontWeight: 600 }}>Cebindeki Çip:</span>
+          <span style={{ color: '#ffd700', fontWeight: 900, fontSize: '0.9rem' }}>
+            🪙 {(seat >= 0 ? game?.chips?.[seat] : bal) ?? bal ?? 1500} Çip
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button
+            className="btn sm"
+            style={{
+              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              color: '#fff',
+              fontWeight: 800,
+              fontSize: '0.68rem',
+              padding: '3px 8px',
+              border: 'none',
+              borderRadius: '4px',
+            }}
+            onClick={handleQuickReload}
+            title="Masaya anında 1000 çip takviye yap"
+          >
+            +1000 Çip Yükle
+          </button>
+          {onOpenShop && (
+            <button
+              className="btn sm"
+              style={{
+                background: 'linear-gradient(135deg, #ffd700, #ff9900)',
+                color: '#000',
+                fontWeight: 900,
+                fontSize: '0.68rem',
+                padding: '3px 8px',
+                border: 'none',
+                borderRadius: '4px',
+              }}
+              onClick={onOpenShop}
+            >
+              🛒 Mağaza
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Bahis & Çip Kontrolleri (3D Katmanlı Çip Yığını) */}
       <div className="controls">

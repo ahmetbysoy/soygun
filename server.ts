@@ -193,17 +193,28 @@ function getDynamicChipPackages() {
   ];
 }
 
-// ── 🛡️ DYNAMIC HOUSE EDGE & BALİNA KALKANI (Whale Defense Engine) ──
+// ── 🛡️ DYNAMIC HOUSE EDGE & BALİNA KALKANI & DDA MOTORU (Dynamic Difficulty Adjustment) ──
 /**
- * Masadaki toplam pot ve risk exposure'ı analiz ederek
- * Kasanın asla batmayacağı ağırlıklı GLI-19 sonucunu hesaplar.
+ * Masadaki toplam pot, risk exposure ve oyuncunun beceri seviyesini (DDA) analiz ederek
+ * Kasanın asla batmayacağı ve yeni oyuncuları ödüllendirip alışanları zorlayan GLI-19 sonucunu hesaplar.
  */
 function calculateAuthoritativeOutcome(
   clientSeed: string,
   nonce: number,
   segmentCount: number,
-  betsSummary?: { totalPot?: number; maxSingleBet?: number; betsBySegment?: Record<number, number> }
-): { winningSeg: number; rawHex: string; houseEdge: number; whaleDetected: boolean } {
+  betsSummary?: {
+    totalPot?: number;
+    maxSingleBet?: number;
+    betsBySegment?: Record<number, number>;
+    playerBets?: Record<number, number>;
+    dda?: {
+      skillScore?: number;
+      level?: string;
+      houseEdgeOffset?: number;
+      botIntentionalMiss?: boolean;
+    };
+  }
+): { winningSeg: number; rawHex: string; houseEdge: number; whaleDetected: boolean; ddaLevel: string } {
   // Standart HMAC-SHA256
   const hmac = crypto.createHmac("sha256", currentServerSeed);
   hmac.update(`${clientSeed}:${nonce}`);
@@ -213,31 +224,51 @@ function calculateAuthoritativeOutcome(
   const totalPot = betsSummary?.totalPot || 0;
   const maxSingleBet = betsSummary?.maxSingleBet || 0;
   const betsBySegment = betsSummary?.betsBySegment || {};
+  const playerBets = betsSummary?.playerBets || {};
+  const dda = betsSummary?.dda;
+  const ddaLevel = dda?.level || "WARMUP";
 
   // Balina Tespiti: Pot > 2.000 veya tekil bahis > 800 çip
   const isWhalePresent = totalPot >= 2000 || maxSingleBet >= 800;
 
-  // Dinamik Kasa Marjı (Dynamic House Edge)
+  // Dinamik Kasa Marjı (Dynamic House Edge + DDA Offset)
   let houseEdge = 3.5; // Normal taban marjı %3.5 (RTP: %96.5)
+  if (dda?.houseEdgeOffset != null) {
+    houseEdge = Math.max(0.5, Math.min(15.0, houseEdge + dda.houseEdgeOffset));
+  }
+
   if (isWhalePresent) {
     // Balina büyüklüğüne göre kademeli %12 - %20 Kasa Marjı
     const riskFactor = Math.min(20, 10 + Math.floor(totalPot / 1000) * 2.5);
-    houseEdge = riskFactor;
+    houseEdge = Math.max(houseEdge, riskFactor);
   }
 
   // İlk 4 byte 32-bit unsigned integer
   const intVal = digestBuffer.readUInt32BE(0);
   let rawSeg = intVal % segmentCount;
 
-  // ── MARKET MAKER KASA KORUMA MATEMATİĞİ ──
-  // Eğer balina masadaysa ve rastgele sonuç kasanın batmasına sebep olacak devasa çarpanlı (x5.82 veya x11.64)
-  // ya da balinanın en çok çip yığdığı dilime denk geldiyse, kasa marjı algoritması ikinci hash türeviyle
-  // sonucu dengeler (kasa riski minimize edilir).
+  // ── 🍯 DDA: YENİ GELENE BOTLAR YENİLSİN / ÇAYLAK KANCASI (Honeymoon Hook) ──
+  // Eğer oyuncu yeni geldiyse (HONEYMOON) ve bahis koyduysa, kasa oyuncunun kazanç ihtimalini maksimize eder
+  if (dda?.botIntentionalMiss && Object.keys(playerBets).length > 0) {
+    const playerActiveSegments = Object.keys(playerBets)
+      .map(Number)
+      .filter((seg) => (playerBets[seg] || 0) > 0);
+
+    if (playerActiveSegments.length > 0) {
+      // Eğer ham sonuç oyuncunun oynamadığı bir dilimse veya bombaysa, %65 ihtimalle oyuncunun bahsine yönlendir
+      const isPlayerHit = playerActiveSegments.includes(rawSeg);
+      if (!isPlayerHit && Math.random() < 0.65) {
+        // Oyuncunun bahis oynadığı dilimlerden birini seç
+        rawSeg = playerActiveSegments[Math.floor(Math.random() * playerActiveSegments.length)];
+      }
+    }
+  }
+
+  // ── 🦈 MARKET MAKER KASA KORUMA MATEMATİĞİ ──
+  // Eğer balina masadaysa veya CARTEL_HELL modundaysa ve tek bir dilime aşırı yığılma varsa kasa savunması devreye girer
   if (isWhalePresent && betsBySegment[rawSeg] && betsBySegment[rawSeg] > totalPot * 0.45) {
-    // Kasa riski aşırı yüksek: İkincil kriptografik türev al
     const secondaryHash = crypto.createHash("sha256").update(`${currentServerSeed}:${rawHex}:whaleDefense`).digest();
     const secondaryInt = secondaryHash.readUInt32BE(0);
-    // Kasanın daha güvenli bir dilimine yönlendir (örneğin Bomba dilimi 0, Steal dilimi 6 veya düşük çarpan)
     rawSeg = secondaryInt % segmentCount;
   }
 
@@ -246,6 +277,7 @@ function calculateAuthoritativeOutcome(
     rawHex: rawHex.slice(0, 32),
     houseEdge,
     whaleDetected: isWhalePresent,
+    ddaLevel,
   };
 }
 
@@ -338,6 +370,7 @@ async function startServer() {
         rawHexSignature: outcome.rawHex,
         houseEdge: outcome.houseEdge,
         whaleShieldActive: outcome.whaleDetected,
+        ddaLevel: outcome.ddaLevel,
         timestamp: roundData.timestamp,
       });
 

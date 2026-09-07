@@ -5,9 +5,10 @@
 import { useEffect, useState } from 'react'
 import { db, ref, onValue, set, get, update, runTransaction, ROOT } from './firebase.js'
 import { getPool, adjPool, addPaid, adjJackpot, getJackpotPool } from './economy.js'
-import { BotBrain, getFreshBotProfile, BOT_PERSONALITIES } from './core/botBrain.js'
+import { BotBrain, getFreshBotProfile, BOT_PERSONALITIES, calculatePlayerSkill, dynamicDifficultyAdjustment } from './core/botBrain.js'
 import { authoritativeClient } from './core/authoritativeClient.js'
 import { MathEngine } from './core/MathEngine.js'
+import { revenueTracker } from './core/revenueTracker.js'
 
 const botBrains = [new BotBrain('risk'), new BotBrain('safe'), new BotBrain('chaos'), new BotBrain('chaser')]
 
@@ -224,10 +225,18 @@ export function injectBotBets(game, seats) {
   // Gerçek insan oyuncunun koltuğunu bul
   const realPlayerSeat = seats.findIndex(s => s != null)
   let playerTiltInfo = { tiltScore: 0, isPlayerTilted: false, predatoryMultiplier: 1.0 }
+  let playerSkill = { skillScore: 10, gamesPlayed: 0, winCount: 0, winRate: 0, netProfit: 0, streak: 0, tierName: 'Yeni Gelen (Çaylak)', tierBadge: '🐣' }
+  let dda = dynamicDifficultyAdjustment(10)
 
-  if (realPlayerSeat !== -1 && botBrains[0]) {
-    playerTiltInfo = botBrains[0].calculatePlayerTiltScore(realPlayerSeat, game, seats)
+  if (realPlayerSeat !== -1) {
+    if (botBrains[0]) {
+      playerTiltInfo = botBrains[0].calculatePlayerTiltScore(realPlayerSeat, game, seats)
+    }
+    playerSkill = calculatePlayerSkill(realPlayerSeat, game, seats)
+    dda = dynamicDifficultyAdjustment(playerSkill, null, game)
   }
+
+  const realPlayerBets = realPlayerSeat !== -1 ? (game.bets?.[realPlayerSeat] || {}) : {}
 
   for (let i = 0; i < N_SEATS; i++) {
     if (seats[i]) continue                       // gerçek oyuncu → bot değil
@@ -241,9 +250,9 @@ export function injectBotBets(game, seats) {
     const brain = botBrains[i] || new BotBrain('risk')
 
     // Chaser/Sniper bot son 3 saniyede %85 oranında pusuya yatar
-    const isSniperTime = brain.style === 'chaser' && timeLeftMs <= 3200
+    const isSniperTime = brain.style === 'chaser' && timeLeftMs <= Math.max(2500, (dda.snipeUrgency || 0.5) * 4000)
     const isTilt = brain.checkTiltStatus()
-    const isPredatory = playerTiltInfo.isPlayerTilted
+    const isPredatory = playerTiltInfo.isPlayerTilted || dda.level === 'CARTEL_HELL'
 
     botStatesPatch[i] = {
       isTilt,
@@ -254,25 +263,34 @@ export function injectBotBets(game, seats) {
       title: game.botProfiles?.[i]?.title || brain.profile.title,
       avatar: game.botProfiles?.[i]?.ava || brain.profile.avatar,
       predatoryMult: playerTiltInfo.predatoryMultiplier.toFixed(2),
+      ddaLevel: dda.level,
     }
 
-    if (!isSniperTime && !isTilt && !isPredatory && Math.random() >= 0.38) continue
+    if (!isSniperTime && !isTilt && !isPredatory && Math.random() >= (0.38 * dda.botAggression)) continue
 
     const spent = Object.values(game.bets?.[i] || {}).reduce((a, x) => a + x, 0)
     const bankroll = (game.chips?.[i] ?? 0) - spent
     if (bankroll < 10) continue
 
-    const segIdx = brain.pickTargetSegment(SEG, game.history || [], timeLeftMs, isPredatory)
+    const segIdx = brain.pickTargetSegment(SEG, game.history || [], timeLeftMs, isPredatory, dda, realPlayerBets)
     const amt = Math.min(
-      brain.calcDynamicBetSize(bankroll, SEG[segIdx], timeLeftMs, game.history || [], playerTiltInfo.predatoryMultiplier),
+      brain.calcDynamicBetSize(bankroll, SEG[segIdx], timeLeftMs, game.history || [], playerTiltInfo.predatoryMultiplier, dda),
       bankroll
     )
 
     if (amt > 0) {
       placeBet(i, segIdx, amt)
       
-      // Taunt ve Konuşma Balonları
-      if (isPredatory && Math.random() < 0.35) {
+      // Taunt ve Konuşma Balonları (DDA ile senkron)
+      if (dda.level === 'HONEYMOON' && Math.random() < 0.20) {
+        const taunt = brain.getRandomTaunt('rookie_praise')
+        log(`🍯 ${taunt}`, 'g')
+        broadcastBubble(i, brain.currentBubble || '🐣 Acemiye yol verin!', 'chat')
+      } else if (dda.level === 'CARTEL_HELL' && Math.random() < 0.35) {
+        const taunt = brain.getRandomTaunt('cartel_crush')
+        log(`☠️ ${taunt}`, 'r')
+        broadcastBubble(i, brain.currentBubble || '👑 KARTEL MASAYA ÇÖKTÜ!', 'predatory')
+      } else if (isPredatory && Math.random() < 0.35) {
         const taunt = brain.getRandomTaunt('predatory')
         log(`🦈 ${taunt}`, 'r')
         broadcastBubble(i, brain.currentBubble || '🦈 KOKUNU ALDIM, BİTTİN SEN!', 'predatory')
@@ -292,9 +310,12 @@ export function injectBotBets(game, seats) {
     }
   }
 
-  if (Object.keys(botStatesPatch).length > 0) {
-    update(ref(db, `${ROOT}/table/game/botStates`), botStatesPatch).catch(() => {})
+  // DDA Durumunu ve Bot Durumlarını masaya patchle
+  const fullPatch = {
+    ...botStatesPatch,
   }
+  update(ref(db, `${ROOT}/table/game/botStates`), fullPatch).catch(() => {})
+  update(ref(db, `${ROOT}/table/game/ddaState`), dda).catch(() => {})
 }
 
 // ── SADECE HOST çağırır: faz süresi dolduysa bir sonraki faza geç ──
@@ -303,7 +324,7 @@ export function injectBotBets(game, seats) {
 export async function advancePhase(game, seats) {
   if (!game || now() < game.phaseUntil) return
   if (game.phase === 'bet') return lockPhase()
-  if (game.phase === 'lock') return spinPhase()
+  if (game.phase === 'lock') return spinPhase(game, seats)
   if (game.phase === 'spin') {
     const pool = await getPool()
     return settlePhase(game, pool, seats)
@@ -325,18 +346,46 @@ function lockPhase() {
   })
 }
 
-async function spinPhase() {
-  const spinData = await authoritativeClient.requestSpin(N)
+async function spinPhase(game, seats = []) {
+  // Masadaki bahis dağılımı ve DDA parametrelerini hesapla
+  const totalPot = game?.pot || 0
+  let maxSingleBet = 0
+  const betsBySegment = {}
+  for (let i = 0; i < N_SEATS; i++) {
+    for (let j = 0; j < N; j++) {
+      const b = game?.bets?.[i]?.[j] || 0
+      if (b > 0) {
+        betsBySegment[j] = (betsBySegment[j] || 0) + b
+        if (b > maxSingleBet) maxSingleBet = b
+      }
+    }
+  }
+
+  const realPlayerSeat = Array.isArray(seats) ? seats.findIndex(s => s != null) : -1
+  const playerBets = (realPlayerSeat !== -1 && game?.bets?.[realPlayerSeat]) ? game.bets[realPlayerSeat] : {}
+  const playerSkill = calculatePlayerSkill(realPlayerSeat, game, seats)
+  const dda = dynamicDifficultyAdjustment(playerSkill, null, game)
+
+  const spinData = await authoritativeClient.requestSpin(N, {
+    totalPot,
+    maxSingleBet,
+    betsBySegment,
+    playerBets,
+    dda,
+  })
+
   const winIdx = spinData.winningSeg
   return runTransaction(gRef(), g => {
     if (!g || g.phase !== 'lock') return
     g.segResult = winIdx
+    g.ddaState = dda
     g.provablyProof = {
       serverSeedHash: spinData.serverSeedHash,
       clientSeed: spinData.clientSeed,
       nonce: spinData.nonce,
       rawHex: spinData.rawHex,
       authoritative: spinData.isServerAuthoritative,
+      ddaLevel: spinData.ddaLevel || dda.level,
     }
     g.phase = 'spin'
     g.phaseUntil = now() + SPIN_MS + 250
@@ -411,27 +460,26 @@ async function settlePhase(game, pool, seats = {}) {
     })
   } else { poolDelta += pot }   // 💣 BOMB → kasa
 
-  // 👑 Gerçek İnsan Oyuncuların VIP Hacim & Rakeback Güncellemesi
+  // 👑 Gerçek İnsan Oyuncuların VIP Hacim & Rakeback Güncellemesi ve Bakiye Senkronizasyonu
   for (let i = 0; i < N_SEATS; i++) {
     const seatObj = seats[i]
     if (seatObj && seatObj.uid) {
       const betAmt = seatTotalBet(i)
-      if (betAmt > 0) {
-        const winAmt = seatWins[i] || 0
-        const netLoss = Math.max(0, betAmt - winAmt)
-        const uRef = ref(db, `${ROOT}/users/${seatObj.uid}`)
-        runTransaction(uRef, u => {
-          if (!u) return u
-          u.total_wagered = (u.total_wagered || 0) + betAmt
-          if (netLoss > 0) {
-            const vipTier = MathEngine.getVipTier(u.total_wagered)
-            const rakeback = MathEngine.calculateRakeback(netLoss, vipTier.id)
-            u.locked_rakeback = (u.locked_rakeback || 0) + rakeback
-            u.accumulated_rakeback = (u.locked_rakeback || 0) + (u.unlocked_rakeback || 0)
-          }
-          return u
-        }).catch(() => {})
-      }
+      const winAmt = seatWins[i] || 0
+      const netLoss = Math.max(0, betAmt - winAmt)
+      const uRef = ref(db, `${ROOT}/users/${seatObj.uid}`)
+      runTransaction(uRef, u => {
+        if (!u) return u
+        u.balance = chips[i] != null ? chips[i] : (u.balance || 0)
+        u.total_wagered = (u.total_wagered || 0) + betAmt
+        if (netLoss > 0) {
+          const vipTier = MathEngine.getVipTier(u.total_wagered)
+          const rakeback = MathEngine.calculateRakeback(netLoss, vipTier.id)
+          u.locked_rakeback = (u.locked_rakeback || 0) + rakeback
+          u.accumulated_rakeback = (u.locked_rakeback || 0) + (u.unlocked_rakeback || 0)
+        }
+        return u
+      }).catch(() => {})
     } else {
       // 🤖 Bot Zekası Sonuç Kaydı & Tilt / Galibiyet / Soygun / Bomba Tepkisi
       const brain = botBrains[i]
@@ -457,6 +505,29 @@ async function settlePhase(game, pool, seats = {}) {
   await update(gRef(), patch)
   if (poolDelta) adjPool(Math.round(poolDelta))
   if (paidOut) addPaid(paidOut)
+
+  // 🏦 Finansal Deftere Gerçek Zamanlı Gelir / Gider Kaydı (Inflow vs Outflow)
+  if (pot > 0) {
+    revenueTracker.recordTransaction({
+      type: 'BET_INFLOW',
+      chips: pot,
+      actorId: 'table_pot',
+      actorName: `Tur #${game.round || 1} Masası`,
+      description: `Tur #${game.round || 1} masaya konan toplam bahis hacmi`,
+      roundId: game.round || 1,
+    }).catch(() => {})
+  }
+  if (paidOut > 0) {
+    revenueTracker.recordTransaction({
+      type: 'PAYOUT_OUTFLOW',
+      chips: paidOut,
+      actorId: 'payout_engine',
+      actorName: 'Kasa Ödeme Motoru',
+      description: `Tur #${game.round || 1} kazananlara dağıtılan ödül (${seg.l})`,
+      roundId: game.round || 1,
+    }).catch(() => {})
+  }
+
   log(`🎯 T${game.round}: ${seg.l}${effMult !== seg.t ? ` →x${effMult.toFixed(2)}` : ''} · pot ${game.pot || 0}`)
 }
 

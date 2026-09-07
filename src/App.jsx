@@ -16,8 +16,8 @@ import SunkCostModal from './components/SunkCostModal.jsx'
 import ResurrectionModal from './components/ResurrectionModal.jsx'
 import { uxManager } from './core/UXManager.js'
 
-const BUY_IN = 20         // chip — buy-in koltuk bedeli
-const START_BAL = 100     // başlangıç chip
+const BUY_IN = 25         // chip — buy-in koltuk bedeli
+const START_BAL = 1500     // başlangıç chip sermayesi
 const SEATS = 4
 
 export default function App() {
@@ -112,11 +112,25 @@ export default function App() {
           accumulated_rakeback: 0,
           ts: Date.now(),
         })
+      } else {
+        const val = s.val()
+        if (val && (val.balance == null || val.balance <= 0)) {
+          // Sıfır bakiyeli hesabı otomatik canlandır ve kurtarma sermayesi yükle
+          update(uRef, { balance: START_BAL })
+        }
       }
     })
     set(ref(db, `${ROOT}/wallets/${me.uid}`), currentAddr)
 
-    const un1 = onValue(ref(db, `${ROOT}/users/${me.uid}/balance`), s => setBal(s.val() ?? 0))
+    const un1 = onValue(ref(db, `${ROOT}/users/${me.uid}/balance`), s => {
+      const b = s.val()
+      if (b == null || b <= 0) {
+        setBal(START_BAL)
+        update(ref(db, `${ROOT}/users/${me.uid}`), { balance: START_BAL }).catch(() => {})
+      } else {
+        setBal(b)
+      }
+    })
     const un2 = onValue(ref(db, `${ROOT}/table/seats`), s => {
       const v = s.val() || {}
       setSeats(v)
@@ -129,7 +143,15 @@ export default function App() {
       const v = s.val() || {}
       setFeed(Object.values(v).sort((a, b) => b.ts - a.ts).slice(0, 12))
     })
-    return () => [un1, un2, un3, un4, un5].forEach(f => f())
+
+    // ⚡ Global realTimeRevenueDashboard() Event Listener
+    const handleRevenueEvent = () => setIsRevenueDashboardOpen(true)
+    window.addEventListener('OPEN_REVENUE_DASHBOARD', handleRevenueEvent)
+
+    return () => {
+      [un1, un2, un3, un4, un5].forEach(f => f())
+      window.removeEventListener('OPEN_REVENUE_DASHBOARD', handleRevenueEvent)
+    }
     // eslint-disable-next-line
   }, [])
 
@@ -137,7 +159,13 @@ export default function App() {
 
   // ── masaya otur ──
   async function joinSeat() {
-    if (bal == null || bal < BUY_IN) return alert(`Oturmak için ${BUY_IN} chip gerek (bakiye ${bal})`)
+    let effectiveBal = bal ?? 0
+    if (effectiveBal < BUY_IN) {
+      effectiveBal = START_BAL
+      await update(ref(db, `${ROOT}/users/${me.uid}`), { balance: START_BAL })
+      setBal(START_BAL)
+    }
+
     for (let i = 0; i < SEATS; i++) {
       if (seats[i]) continue
       const r = await runTransaction(ref(db, `${ROOT}/table/seats/${i}`), cur => {
@@ -145,10 +173,13 @@ export default function App() {
         return { uid: me.uid, name: me.name, ts: Date.now() }
       })
       if (r.committed) {
-        await update(ref(db, `${ROOT}/users/${me.uid}`), { balance: bal - BUY_IN })
+        const tableChips = Math.max(effectiveBal, 1000)
+        await update(ref(db, `${ROOT}/table/game/chips`), { [i]: tableChips })
+        await update(ref(db, `${ROOT}/table/game/out`), { [i]: false })
+        await update(ref(db, `${ROOT}/users/${me.uid}`), { balance: tableChips })
         onDisconnect(ref(db, `${ROOT}/table/seats/${i}`)).remove()
         setMySeat(i); setScreen('game')
-        pushFeed(`🪑 ${me.name} ${i + 1}. koltuğa oturdu (-${BUY_IN} chip)`)
+        pushFeed(`🪑 ${me.name} ${i + 1}. koltuğa oturdu (${tableChips} çip)`)
         return
       }
     }
@@ -162,7 +193,12 @@ export default function App() {
   }
 
   function leave() {
-    if (mySeat >= 0) remove(ref(db, `${ROOT}/table/seats/${mySeat}`))
+    if (mySeat >= 0) {
+      remove(ref(db, `${ROOT}/table/seats/${mySeat}`))
+      if (game?.chips?.[mySeat] != null) {
+        update(ref(db, `${ROOT}/users/${me.uid}`), { balance: game.chips[mySeat] })
+      }
+    }
     remove(ref(db, `${ROOT}/table/spectators/${me.uid}`))
     setMySeat(-1); setScreen('lobby')
   }
@@ -399,7 +435,15 @@ export default function App() {
         </div>
       ) : (
         <div className="game">
-          <Wheel seat={mySeat} seats={seats} meName={me.name} onAutoSeat={joinSeat} />
+          <Wheel
+            seat={mySeat}
+            seats={seats}
+            meName={me.name}
+            uid={me.uid}
+            bal={bal}
+            onOpenShop={() => setIsShopOpen(true)}
+            onAutoSeat={joinSeat}
+          />
           {mySeat < 0 && (
             <div className="likeRow">
               {Array.from({ length: SEATS }, (_, i) => seats[i] && (
@@ -442,8 +486,12 @@ export default function App() {
         isOpen={isShopOpen}
         onClose={() => setIsShopOpen(false)}
         uid={me.uid}
-        onPurchased={() => {
+        onPurchased={(added) => {
           refreshLoyalty()
+          if (mySeat >= 0 && added) {
+            runTransaction(ref(db, `${ROOT}/table/game/chips/${mySeat}`), c => (c || 0) + added)
+            update(ref(db, `${ROOT}/table/game/out`), { [mySeat]: false })
+          }
         }}
       />
 

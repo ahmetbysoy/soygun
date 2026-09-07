@@ -5,25 +5,36 @@ import { abTestEngine, EXPERIMENTS } from '../core/ABTestFeatureFlag.js'
 import { TaxReportEngine, TAX_JURISDICTIONS } from '../core/TaxReportEngine.js'
 import { STORE_COMPLIANCE } from '../core/StoreSubmissionKit.js'
 import { marketRateStreamer, getDynamicHouseEdge } from '../economy.js'
+import { revenueTracker, realTimeRevenueDashboard } from '../core/revenueTracker.js'
 
 export default function RealTimeRevenueDashboard({ isOpen, onClose, gameData, econData }) {
-  const [activeTab, setActiveTab] = useState('overview') // overview | ltv_churn | ab_testing | tax_report | store_submission
+  const [activeTab, setActiveTab] = useState('overview') // overview | ledger | ltv_churn | ab_testing | tax_report | store_submission
   const [selectedJurisdiction, setSelectedJurisdiction] = useState('CURACAO_GCB')
   const [marketState, setMarketState] = useState(marketRateStreamer.getMarketState())
   const [abOverrides, setAbOverrides] = useState(abTestEngine.overrides)
   const [downloadSuccess, setDownloadSuccess] = useState('')
+  const [revenueStats, setRevenueStats] = useState(revenueTracker.getStats())
+  const [ledgerEntries, setLedgerEntries] = useState(revenueTracker.getLedger())
 
   useEffect(() => {
-    return marketRateStreamer.subscribe(state => setMarketState(state))
+    const unsubMarket = marketRateStreamer.subscribe(state => setMarketState(state))
+    const unsubRevenue = revenueTracker.subscribe((stats, ledger) => {
+      setRevenueStats(stats)
+      setLedgerEntries(ledger)
+    })
+    return () => {
+      unsubMarket()
+      unsubRevenue()
+    }
   }, [])
 
   if (!isOpen) return null
 
-  // Finansal Rakamlar
-  const totalWagered = econData?.paid_chips ? (econData.paid_chips * 1.85) : 148500
-  const totalPaidOut = econData?.paid_chips ? (econData.paid_chips * 1.78) : 142200
+  // Finansal Rakamlar (Canlı Defter + Firebase Verisi)
+  const totalWagered = revenueStats.totalWageredChips || (econData?.paid_chips ? (econData.paid_chips * 1.85) : 148500)
+  const totalPaidOut = revenueStats.totalPaidOutChips || (econData?.paid_chips ? (econData.paid_chips * 1.78) : 142200)
   const prizePool = econData?.prize_pool || 6400
-  const totalRevenueChips = econData?.revenue_chips || 12800
+  const totalRevenueChips = revenueStats.netRevenueChips || (econData?.revenue_chips || 12800)
 
   const rtp = FinancialMetricsEngine.calculateRTP(totalWagered, totalPaidOut)
   const houseEdge = FinancialMetricsEngine.calculateHouseEdge(rtp)
@@ -93,6 +104,7 @@ export default function RealTimeRevenueDashboard({ isOpen, onClose, gameData, ec
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '12px', borderBottom: '1px solid #1f2737', paddingBottom: '8px' }}>
           {[
             { id: 'overview', label: '📊 Canlı Hasılat & GGR' },
+            { id: 'ledger', label: '💸 Anlık Gelir/Gider Defteri' },
             { id: 'ltv_churn', label: '🧠 LTV & Churn Modelleri' },
             { id: 'ab_testing', label: '🧪 A/B Testing Motoru' },
             { id: 'tax_report', label: '📑 Vergi Raporu (CSV)' },
@@ -162,6 +174,106 @@ export default function RealTimeRevenueDashboard({ isOpen, onClose, gameData, ec
                 <span>Masadaki Canlı Pot: <strong style={{ color: '#ffd700' }}>{gameData?.pot || 0} Çip</strong></span>
                 <span>Ortak Havuz: <strong style={{ color: '#00c26e' }}>{prizePool} Çip</strong></span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* 2. SEKME: ANLIK GELİR / GİDER DEFTERİ (REAL-TIME LEDGER STREAM) */}
+        {activeTab === 'ledger' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#fff' }}>
+                  💸 ANLIK HASILAT & GİDER AKIŞI (REAL-TIME LEDGER)
+                </div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--dim)' }}>
+                  Her turdaki bahis girişleri (Inflow), kasa ödemeleri (Outflow) ve anlık marj takibi
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <span style={{
+                  fontSize: '0.7rem',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  background: 'rgba(0, 229, 117, 0.15)',
+                  color: '#00e575',
+                  border: '1px solid #00c26e',
+                  fontWeight: 800,
+                }}>
+                  Giriş Hızı: +{revenueStats.hourlyInflowChips || 0} Çip/s
+                </span>
+                <span style={{
+                  fontSize: '0.7rem',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  color: '#ef4444',
+                  border: '1px solid #ef4444',
+                  fontWeight: 800,
+                }}>
+                  Çıkış Hızı: -{revenueStats.hourlyOutflowChips || 0} Çip/s
+                </span>
+              </div>
+            </div>
+
+            {/* Finansal Akış Tablosu */}
+            <div style={{
+              background: '#0a0e17',
+              border: '1px solid #1f2737',
+              borderRadius: '8px',
+              maxHeight: '260px',
+              overflowY: 'auto',
+            }}>
+              {ledgerEntries.length === 0 ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: 'var(--dim)', fontSize: '0.75rem' }}>
+                  ⏳ Masada turlar döndükçe anlık finansal defter hareketleri buraya canlı akacaktır.
+                </div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.7rem', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ background: '#121824', color: '#94a3b8', borderBottom: '1px solid #1f2737' }}>
+                      <th style={{ padding: '6px 10px' }}>Zaman</th>
+                      <th style={{ padding: '6px 10px' }}>İşlem Tipi</th>
+                      <th style={{ padding: '6px 10px' }}>Açıklama</th>
+                      <th style={{ padding: '6px 10px' }}>Çip Tutarı</th>
+                      <th style={{ padding: '6px 10px' }}>USD Karşılığı</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ledgerEntries.map(tx => {
+                      const isInflow = tx.type === 'BET_INFLOW' || tx.type === 'DEPOSIT'
+                      const isCost = tx.type === 'SERVER_COST'
+                      return (
+                        <tr key={tx.id} style={{ borderBottom: '1px solid #151d2c' }}>
+                          <td style={{ padding: '6px 10px', color: 'var(--dim)' }}>
+                            {new Date(tx.timestamp).toLocaleTimeString()}
+                          </td>
+                          <td style={{ padding: '6px 10px', fontWeight: 800 }}>
+                            <span style={{
+                              color: isInflow ? '#00e575' : isCost ? '#a855f7' : '#ef4444',
+                              background: isInflow ? 'rgba(0, 229, 117, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                            }}>
+                              {isInflow ? '▲ GELİR / GİRİŞ' : isCost ? '⚙️ MALİYET' : '▼ GİDER / ÖDEME'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '6px 10px', color: '#cbd5e1' }}>
+                            {tx.description || tx.actorName}
+                          </td>
+                          <td style={{ padding: '6px 10px', fontWeight: 800, color: isInflow ? '#00e575' : '#ef4444' }}>
+                            {isInflow ? '+' : '-'}{tx.chips} Çip
+                          </td>
+                          <td style={{ padding: '6px 10px', color: '#ffd700', fontWeight: 700 }}>
+                            ${tx.usdAmount}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         )}

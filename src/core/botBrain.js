@@ -431,8 +431,8 @@ export class BotBrain {
   /**
    * Kelly Criterion ile matematiksel optimal bahis fraksiyonu
    */
-  getKellyFraction(p, mult, predatoryMultiplier = 1.0) {
-    const effectiveKelly = this.profile.kellyMultiplier * predatoryMultiplier
+  getKellyFraction(p, mult, predatoryMultiplier = 1.0, ddaModifier = 1.0) {
+    const effectiveKelly = this.profile.kellyMultiplier * predatoryMultiplier * ddaModifier
     return MathEngine.calculateKellyCriterion(p, mult, effectiveKelly)
   }
 
@@ -536,21 +536,51 @@ export class BotBrain {
   }
 
   /**
-   * Çark dilimi seçimi: Predatory ve EV optimize seçim
+   * Çark dilimi seçimi: DDA, Predatory ve EV optimize seçim
+   * - Honeymoon (Yeni Gelen): Botlar kasıtlı olarak oyuncunun seçtiği dilimlerden kaçar,
+   *   yol verir veya kötü dilimlere (0 Bomba vs) oynar.
+   * - Predator / Nightmare (Alışmış): Botlar doğrudan oyuncunun zayıf noktasına ve Steal'e abanır.
    */
-  pickTargetSegment(SEG, history = [], timeLeftMs = 15000, isPredatory = false) {
+  pickTargetSegment(SEG, history = [], timeLeftMs = 15000, isPredatory = false, dda = null, playerBets = {}) {
     const fallacy = this.calcGamblerFallacyBias(history)
 
-    // 1. Predatory (Yırtıcı Avcı) Seçimi
+    // 🎯 1. DDA HONEYMOON (Yeni Gelene Yol Verme / Kasıtlı Hata)
+    if (dda?.botIntentionalMiss) {
+      // Eğer oyuncunun oynadığı dilimler varsa botlar bu dilimleri oyuncuya bırakır
+      const playerChosenSegments = Object.keys(playerBets).filter(k => (playerBets[k] || 0) > 0).map(Number)
+      
+      // %70 ihtimalle oyuncunun oynamadığı veya daha düşük ihtimalli dilimleri seç
+      if (Math.random() < (dda.targetErrorRate || 0.65)) {
+        const nonPlayerIdxs = SEG.map((_, i) => playerChosenSegments.includes(i) ? -1 : i).filter(i => i >= 0)
+        if (nonPlayerIdxs.length > 0) {
+          return nonPlayerIdxs[Math.floor(Math.random() * nonPlayerIdxs.length)]
+        }
+      }
+    }
+
+    // 🦈 2. DDA PREDATOR & CARTEL HELL (Alışan Oyuncuya Saldırı)
+    if (dda && (dda.level === 'PREDATOR' || dda.level === 'CARTEL_HELL')) {
+      // Steal ihtimali DDA ile tavan yapar
+      if (Math.random() < dda.stealPreference) {
+        const stealIdxs = SEG.map((s, i) => s.t === 'S' ? i : -1).filter(i => i >= 0)
+        if (stealIdxs.length > 0) return stealIdxs[Math.floor(Math.random() * stealIdxs.length)]
+      }
+      // Yüksek çarpan snipingle oyuncunun potunu kapat
+      if (dda.level === 'CARTEL_HELL' || Math.random() < 0.6) {
+        const highIdxs = SEG.map((s, i) => (s.t === 11.64 || s.t === 5.82) ? i : -1).filter(i => i >= 0)
+        if (highIdxs.length > 0) return highIdxs[Math.floor(Math.random() * highIdxs.length)]
+      }
+    }
+
+    // 3. Predatory (Yırtıcı Avcı) Seçimi
     if (isPredatory) {
       if (this.style === 'chaos' || this.style === 'risk') {
-        // Soygun veya 11.64'e aban
         const highIdxs = SEG.map((s, i) => (s.t === 'S' || s.t === 11.64) ? i : -1).filter(i => i >= 0)
         if (highIdxs.length > 0) return highIdxs[Math.floor(Math.random() * highIdxs.length)]
       }
     }
 
-    // 2. Kendi Tilt durumu
+    // 4. Kendi Tilt durumu
     if (this.isTilt) {
       if (this.style === 'chaos') {
         const stealIdxs = SEG.map((s, i) => s.t === 'S' ? i : -1).filter(i => i >= 0)
@@ -560,13 +590,13 @@ export class BotBrain {
       if (highIdxs.length > 0) return highIdxs[Math.floor(Math.random() * highIdxs.length)]
     }
 
-    // 3. Fallacy favorisi varsa
+    // 5. Fallacy favorisi varsa
     if (fallacy.favoredClass != null) {
       const matchIdxs = SEG.map((s, i) => s.t === fallacy.favoredClass ? i : -1).filter(i => i >= 0)
       if (matchIdxs.length > 0) return matchIdxs[Math.floor(Math.random() * matchIdxs.length)]
     }
 
-    // 4. Normal Stil Ağırlığı
+    // 6. Normal Stil Ağırlığı
     if (this.style === 'risk') {
       const pickHigh = Math.random() < 0.65
       const targetCls = pickHigh ? 11.64 : 2.33
@@ -581,7 +611,8 @@ export class BotBrain {
     }
 
     if (this.style === 'chaos') {
-      if (Math.random() < this.profile.stealPreference) {
+      const effectiveStealPref = dda ? dda.stealPreference : this.profile.stealPreference
+      if (Math.random() < effectiveStealPref) {
         const stealIdxs = SEG.map((s, i) => s.t === 'S' ? i : -1).filter(i => i >= 0)
         return stealIdxs.length ? stealIdxs[Math.floor(Math.random() * stealIdxs.length)] : 4
       }
@@ -589,7 +620,8 @@ export class BotBrain {
     }
 
     if (this.style === 'chaser') {
-      if (timeLeftMs < 3500) {
+      const snipeLimit = dda ? (dda.snipeUrgency * 4000) : 3500
+      if (timeLeftMs < snipeLimit) {
         this.isSniperAiming = true
         const highIdxs = SEG.map((s, i) => (s.t === 5.82 || s.t === 'S') ? i : -1).filter(i => i >= 0)
         return highIdxs.length ? highIdxs[Math.floor(Math.random() * highIdxs.length)] : 2
@@ -603,20 +635,30 @@ export class BotBrain {
   }
 
   /**
-   * 🦈 PREDATORY KELLY HESAPLAYICISI (Oyuncunun zafiyetine göre bahis ölçekleme)
+   * 🦈 PREDATORY & DDA KELLY HESAPLAYICISI (Dinamik Zorluk ve Zafiyete Göre Bahis Ölçekleme)
    */
-  calcDynamicBetSize(bankroll, segObj, timeLeftMs = 15000, history = [], predatoryMultiplier = 1.0) {
+  calcDynamicBetSize(bankroll, segObj, timeLeftMs = 15000, history = [], predatoryMultiplier = 1.0, dda = null) {
     if (bankroll <= 10) return Math.max(1, bankroll)
+
+    const ddaMod = dda?.botAggression || 1.0
+    const ddaKelly = dda?.kellyMultiplierMod || 1.0
 
     let baseFraction = 0.05
     if (typeof segObj?.t === 'number' && segObj.t > 0) {
       const p = segObj.t === 2.33 ? (5 / 12) : segObj.t === 5.82 ? (2 / 12) : (1 / 12)
-      baseFraction = this.getKellyFraction(p, segObj.t, predatoryMultiplier)
+      baseFraction = this.getKellyFraction(p, segObj.t, predatoryMultiplier, ddaKelly)
     } else if (segObj?.t === 'S') {
-      baseFraction = 0.08 * predatoryMultiplier
+      baseFraction = 0.08 * predatoryMultiplier * ddaMod
     }
 
     baseFraction = Math.max(0.02, Math.min(0.35, baseFraction))
+
+    // DDA Honeymoon indirim kalkanı
+    if (dda?.botIntentionalMiss) {
+      baseFraction = Math.max(0.02, baseFraction * 0.4)
+    } else if (dda?.level === 'CARTEL_HELL') {
+      baseFraction = Math.min(0.60, baseFraction * 2.2)
+    }
 
     // Tilt Patlaması
     if (this.isTilt) {
@@ -631,7 +673,7 @@ export class BotBrain {
     const fallacy = this.calcGamblerFallacyBias(history)
     baseFraction = Math.min(0.60, baseFraction * fallacy.biasMult)
 
-    const rawBet = Math.round(bankroll * baseFraction)
+    const rawBet = Math.round(bankroll * baseFraction * ddaMod)
     const roundedBet = Math.max(10, Math.floor(rawBet / 10) * 10)
     return Math.min(bankroll, roundedBet)
   }
@@ -658,5 +700,203 @@ export class BotBrain {
       }
       return this.getRandomTaunt('loss')
     }
+  }
+}
+
+/**
+ * 🧠 GERÇEK OYUNCU BECERİ DÜZEYİ HESAPLAYICISI (Player Skill Calculator)
+ * İnsan oyuncunun tecrübesi, kazanma oranı, kâr/zarar eğrisi ve stratejik tutarlılığını analiz eder.
+ */
+export function calculatePlayerSkill(playerSeatIndex, game, seats = {}, userStats = {}) {
+  if (playerSeatIndex == null || playerSeatIndex < 0) {
+    return {
+      skillScore: 10,
+      gamesPlayed: 0,
+      winCount: 0,
+      winRate: 0,
+      netProfit: 0,
+      streak: 0,
+      tierName: 'Yeni Gelen (Çaylak)',
+      tierBadge: '🐣',
+    }
+  }
+
+  const history = game?.history || []
+  let gamesPlayed = 0
+  let winCount = 0
+  let consecutiveWins = 0
+  let currentStreakCounting = true
+
+  for (let i = 0; i < history.length; i++) {
+    const h = history[i]
+    gamesPlayed++
+    if (h.winnerSeat === playerSeatIndex) {
+      winCount++
+      if (currentStreakCounting) consecutiveWins++
+    } else {
+      currentStreakCounting = false
+    }
+  }
+
+  const currentChips = game?.chips?.[playerSeatIndex] ?? 1000
+  const initialChips = 1000
+  const netProfit = currentChips - initialChips
+  const winRate = gamesPlayed > 0 ? (winCount / gamesPlayed) : 0
+
+  const totalWagered = userStats?.total_wagered || 0
+  const totalWagerFactor = Math.min(25, Math.floor(totalWagered / 400))
+
+  // Matematiksel Ağırlıklı Beceri Skoru (0 - 100)
+  let rawScore = 0
+  if (gamesPlayed <= 3) {
+    // İlk 3 elde kanca takma (Honeymoon): Beceri skoru 0-20 arasında sabitlenir
+    rawScore = Math.min(20, (gamesPlayed * 4) + Math.round(winRate * 15))
+  } else {
+    const expScore = Math.min(30, gamesPlayed * 2.2)
+    const winScore = winRate * 35
+    const profitScore = netProfit > 0 ? Math.min(20, (netProfit / 1500) * 20) : 0
+    const streakScore = Math.min(15, consecutiveWins * 5)
+    rawScore = Math.round(expScore + winScore + profitScore + streakScore + totalWagerFactor)
+  }
+
+  const skillScore = Math.max(0, Math.min(100, rawScore))
+
+  let tierName = 'Sokak Çaylağı'
+  let tierBadge = '🐣'
+  if (skillScore >= 75) {
+    tierName = 'Kartel Baronu'
+    tierBadge = '👑'
+  } else if (skillScore >= 50) {
+    tierName = 'Yırtıcı Avcı'
+    tierBadge = '🐺'
+  } else if (skillScore >= 25) {
+    tierName = 'Masaya Alışan'
+    tierBadge = '🎯'
+  }
+
+  return {
+    skillScore,
+    gamesPlayed,
+    winCount,
+    winRate,
+    netProfit,
+    streak: consecutiveWins,
+    tierName,
+    tierBadge,
+  }
+}
+
+/**
+ * ⚡ DYNAMIC DIFFICULTY ADJUSTMENT (DDA) ENGINE
+ * dynamicDifficultyAdjustment(playerSkill, botInstance, gameState)
+ * 
+ * Amaç:
+ * 1. "YENİ GELENE BOTLAR YENİLSİN": Yeni/acemi oyuncunun ilk ellerinde botlar kasıtlı olarak
+ *    suboptimal ve hatalı oynar, oyuncunun bahsine ters/kötü bahislere girer, oyuncuya yol verir (Dopamin & Kanca).
+ * 2. "ALIŞINCA ZORLAŞSIN": Oyuncu turları kazandıkça, bakiyesini katladıkça, oyun sayısı ve
+ *    becerisi (playerSkill) yükseldikçe botlar yırtıcılaşır; Kelly Criterion'u maksimize eder,
+ *    son saniyede potu süpürür (snipe), oyuncunun parasını doğrudan hedef alır (steal),
+ *    ve kartel taktiğiyle koordineli baskı kurar.
+ */
+export function dynamicDifficultyAdjustment(playerSkill, botInstance = null, gameState = null) {
+  let skillVal = 0
+  let gamesPlayed = 0
+  let winRate = 0
+  let netProfit = 0
+  let streak = 0
+
+  if (typeof playerSkill === 'number') {
+    skillVal = Math.max(0, Math.min(100, playerSkill))
+  } else if (playerSkill && typeof playerSkill === 'object') {
+    skillVal = playerSkill.skillScore ?? 0
+    gamesPlayed = playerSkill.gamesPlayed ?? 0
+    winRate = playerSkill.winRate ?? 0
+    netProfit = playerSkill.netProfit ?? 0
+    streak = playerSkill.streak ?? 0
+  }
+
+  let level = 'HONEYMOON'
+  let levelName = '🍯 Yemleme / Çaylak Balı'
+  let badge = '🐣'
+  let botAggression = 0.30
+  let targetErrorRate = 0.70
+  let stealPreference = 0.05
+  let snipeUrgency = 0.05
+  let kellyMultiplierMod = 0.35
+  let houseEdgeOffset = -3.5
+  let botIntentionalMiss = true
+  let statusText = 'Botlar acemiye yol veriyor, çark kazandırıyor. Dopamin tavan!'
+
+  if (skillVal < 25 || gamesPlayed <= 4) {
+    // 1. HONEYMOON (Yeni Gelen / Yemleme)
+    level = 'HONEYMOON'
+    levelName = '🍯 Yemleme / Çaylak Balı'
+    badge = '🐣'
+    botAggression = 0.30
+    targetErrorRate = 0.70
+    stealPreference = 0.04
+    snipeUrgency = 0.05
+    kellyMultiplierMod = 0.35
+    houseEdgeOffset = -3.5
+    botIntentionalMiss = true
+    statusText = 'Botlar acemiye yol veriyor, çark kazandırıyor. Masanın sefası sürülüyor!'
+  } else if (skillVal < 50) {
+    // 2. WARMUP (Alışma Evresi)
+    level = 'WARMUP'
+    levelName = '🎲 Isınma & Alışma'
+    badge = '🎯'
+    botAggression = 0.85
+    targetErrorRate = 0.25
+    stealPreference = 0.18
+    snipeUrgency = 0.25
+    kellyMultiplierMod = 0.85
+    houseEdgeOffset = 0.0
+    botIntentionalMiss = false
+    statusText = 'Botlar masaya ısınıyor, rekabet dengeli.'
+  } else if (skillVal < 75) {
+    // 3. PREDATOR (Kurtlar Sofrası)
+    level = 'PREDATOR'
+    levelName = '🦈 Yırtıcı Kurtlar Sofrası'
+    badge = '🐺'
+    botAggression = 1.55
+    targetErrorRate = 0.06
+    stealPreference = 0.45
+    snipeUrgency = 0.65
+    kellyMultiplierMod = 1.45
+    houseEdgeOffset = +2.5
+    botIntentionalMiss = false
+    statusText = 'Botlar zayıf noktalarını çözdü! Son saniye pusu ve soygun devrede.'
+  } else {
+    // 4. NIGHTMARE_CARTEL (Kartel Celladı - Cehennem)
+    level = 'CARTEL_HELL'
+    levelName = '☠️ Kartel Celladı (Cehennem)'
+    badge = '👑'
+    botAggression = 2.40
+    targetErrorRate = 0.0
+    stealPreference = 0.80
+    snipeUrgency = 0.95
+    kellyMultiplierMod = 2.20
+    houseEdgeOffset = +5.0
+    botIntentionalMiss = false
+    statusText = 'Masada acıma yok! Botlar kartel gibi birleşip masayı kurutuyor.'
+  }
+
+  return {
+    skillScore: Math.round(skillVal),
+    level,
+    levelName,
+    badge,
+    botAggression,
+    targetErrorRate,
+    stealPreference,
+    snipeUrgency,
+    kellyMultiplierMod,
+    houseEdgeOffset,
+    botIntentionalMiss,
+    statusText,
+    gamesPlayed,
+    winRate,
+    netProfit,
+    streak,
   }
 }

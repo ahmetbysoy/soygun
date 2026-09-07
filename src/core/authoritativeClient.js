@@ -72,6 +72,7 @@ export class AuthoritativeClient {
             rawHex: data.rawHexSignature,
             houseEdge: data.houseEdge,
             whaleShieldActive: data.whaleShieldActive,
+            ddaLevel: data.ddaLevel || 'WARMUP',
             isServerAuthoritative: true,
           }
         }
