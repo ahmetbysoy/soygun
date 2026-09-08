@@ -562,73 +562,63 @@ export class BotBrain {
     if (dda && (dda.level === 'PREDATOR' || dda.level === 'CARTEL_HELL')) {
       // Steal ihtimali DDA ile tavan yapar
       if (Math.random() < dda.stealPreference) {
-        const stealIdxs = SEG.map((s, i) => s.t === 'S' ? i : -1).filter(i => i >= 0)
-        if (stealIdxs.length > 0) return stealIdxs[Math.floor(Math.random() * stealIdxs.length)]
+        return 4 // 🥷 Steal kanonik index
       }
       // Yüksek çarpan snipingle oyuncunun potunu kapat
       if (dda.level === 'CARTEL_HELL' || Math.random() < 0.6) {
-        const highIdxs = SEG.map((s, i) => (s.t === 11.64 || s.t === 5.82) ? i : -1).filter(i => i >= 0)
-        if (highIdxs.length > 0) return highIdxs[Math.floor(Math.random() * highIdxs.length)]
+        return Math.random() < 0.5 ? 6 : 2 // 11.64 veya 5.82
       }
     }
 
     // 3. Predatory (Yırtıcı Avcı) Seçimi
     if (isPredatory) {
       if (this.style === 'chaos' || this.style === 'risk') {
-        const highIdxs = SEG.map((s, i) => (s.t === 'S' || s.t === 11.64) ? i : -1).filter(i => i >= 0)
-        if (highIdxs.length > 0) return highIdxs[Math.floor(Math.random() * highIdxs.length)]
+        return Math.random() < 0.6 ? 4 : 6 // Steal veya 11.64
       }
     }
 
     // 4. Kendi Tilt durumu
     if (this.isTilt) {
       if (this.style === 'chaos') {
-        const stealIdxs = SEG.map((s, i) => s.t === 'S' ? i : -1).filter(i => i >= 0)
-        return stealIdxs[Math.floor(Math.random() * stealIdxs.length)]
+        return 4 // Steal
       }
-      const highIdxs = SEG.map((s, i) => (typeof s.t === 'number' && s.t >= 5.82) ? i : -1).filter(i => i >= 0)
-      if (highIdxs.length > 0) return highIdxs[Math.floor(Math.random() * highIdxs.length)]
+      return Math.random() < 0.6 ? 2 : 6 // 5.82 veya 11.64
     }
 
     // 5. Fallacy favorisi varsa
     if (fallacy.favoredClass != null) {
-      const matchIdxs = SEG.map((s, i) => s.t === fallacy.favoredClass ? i : -1).filter(i => i >= 0)
-      if (matchIdxs.length > 0) return matchIdxs[Math.floor(Math.random() * matchIdxs.length)]
+      if (fallacy.favoredClass === 2.33) return 0
+      if (fallacy.favoredClass === 5.82) return 2
+      if (fallacy.favoredClass === 11.64) return 6
+      if (fallacy.favoredClass === 'S') return 4
     }
 
-    // 6. Normal Stil Ağırlığı
+    // 6. Normal Stil Ağırlığı (Kanonik Segment İndeksleri: 0=x2.33, 2=x5.82, 6=x11.64, 4=🥷)
     if (this.style === 'risk') {
-      const pickHigh = Math.random() < 0.65
-      const targetCls = pickHigh ? 11.64 : 2.33
-      const idxs = SEG.map((s, i) => s.t === targetCls ? i : -1).filter(i => i >= 0)
-      return idxs.length ? idxs[Math.floor(Math.random() * idxs.length)] : 0
+      return Math.random() < 0.65 ? 6 : 0
     }
 
     if (this.style === 'safe') {
-      const targetCls = Math.random() < 0.85 ? 2.33 : 5.82
-      const idxs = SEG.map((s, i) => s.t === targetCls ? i : -1).filter(i => i >= 0)
-      return idxs.length ? idxs[Math.floor(Math.random() * idxs.length)] : 0
+      return Math.random() < 0.85 ? 0 : 2
     }
 
     if (this.style === 'chaos') {
       const effectiveStealPref = dda ? dda.stealPreference : this.profile.stealPreference
       if (Math.random() < effectiveStealPref) {
-        const stealIdxs = SEG.map((s, i) => s.t === 'S' ? i : -1).filter(i => i >= 0)
-        return stealIdxs.length ? stealIdxs[Math.floor(Math.random() * stealIdxs.length)] : 4
+        return 4
       }
-      return Math.floor(Math.random() * SEG.length)
+      const choices = [0, 2, 6, 4]
+      return choices[Math.floor(Math.random() * choices.length)]
     }
 
     if (this.style === 'chaser') {
       const snipeLimit = dda ? (dda.snipeUrgency * 4000) : 3500
       if (timeLeftMs < snipeLimit) {
         this.isSniperAiming = true
-        const highIdxs = SEG.map((s, i) => (s.t === 5.82 || s.t === 'S') ? i : -1).filter(i => i >= 0)
-        return highIdxs.length ? highIdxs[Math.floor(Math.random() * highIdxs.length)] : 2
+        return Math.random() < 0.5 ? 2 : 4 // 5.82 veya Steal
       }
       this.isSniperAiming = false
-      const safeIdxs = SEG.map((s, i) => s.t === 2.33 ? i : -1).filter(i => i >= 0)
-      return safeIdxs.length ? safeIdxs[Math.floor(Math.random() * safeIdxs.length)] : 0
+      return 0 // x2.33
     }
 
     return 0

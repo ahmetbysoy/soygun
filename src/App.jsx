@@ -280,33 +280,26 @@ export default function App() {
         </div>
       </header>
 
-      {/* Kasa & Jackpot & VIP Durum Bandı */}
+      {/* Kasa & Jackpot & VIP Lüks Durum Bandı */}
       <div className="econbar">
-        <span>🏦 Kasa <b>{econ?.prize_pool || 0}</b></span>
-        <span style={{ color: '#ffd75e' }}>🎰 Jackpot <b>{econ?.jackpot_pool || 0}</b></span>
+        <span>🏦 Kasa: <b style={{ color: '#34d399' }}>{econ?.prize_pool || 0} Çip</b></span>
+        <span>🎰 Jackpot: <b style={{ color: '#ffd700', textShadow: '0 0 10px rgba(255,215,0,0.5)' }}>{econ?.jackpot_pool || 0}</b></span>
         <span>
-          👑 VIP <b>{loyaltyData?.vipTier?.badge} {loyaltyData?.vipTier?.name || 'Çaylak'}</b>
+          👑 VIP: <b style={{ color: '#fef08a' }}>{loyaltyData?.vipTier?.badge} {loyaltyData?.vipTier?.name || 'Çaylak'}</b>
         </span>
         <button
           className="btn ghost sm"
-          style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
+          style={{ borderColor: 'var(--gold)', color: 'var(--gold)', borderRadius: '8px' }}
           onClick={() => setIsLoyaltyOpen(true)}
         >
-          🎁 VIP & Ganimet ({loyaltyData?.accumulatedRakeback || 0})
+          🎁 Ganimet ({loyaltyData?.accumulatedRakeback || 0})
         </button>
         <button
           className="btn ghost sm"
-          style={{ borderColor: '#4582d3', color: '#6db1ff' }}
+          style={{ borderColor: '#38bdf8', color: '#38bdf8', borderRadius: '8px' }}
           onClick={() => setIsMetricsOpen(true)}
         >
-          📊 RTP & Finans (%97.1)
-        </button>
-        <button
-          className="btn ghost sm"
-          style={{ borderColor: '#00c26e', color: '#00e575', background: 'rgba(0, 194, 110, 0.1)' }}
-          onClick={() => setIsRevenueDashboardOpen(true)}
-        >
-          ⚡ Admin & Hasılat
+          📊 RTP %97.1
         </button>
       </div>
 

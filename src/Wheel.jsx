@@ -32,6 +32,18 @@ import { abTestEngine } from './core/ABTestFeatureFlag.js'
 import DailyStreakModal from './components/DailyStreakModal.jsx'
 import PremiumAvatarFrame from './components/PremiumAvatarFrame.jsx'
 import LiveRankingBadge from './components/LiveRankingBadge.jsx'
+import ReferralRakebackModal from './components/ReferralRakebackModal.jsx'
+import LossAversionInsuranceModal from './components/LossAversionInsuranceModal.jsx'
+import FakeJackpotFOMOTimer from './components/FakeJackpotFOMOTimer.jsx'
+import VIPHighRollerLoungeModal from './components/VIPHighRollerLoungeModal.jsx'
+import SocialProofWinToast from './components/SocialProofWinToast.jsx'
+import TournamentLeaderboardModal from './components/TournamentLeaderboardModal.jsx'
+import LoanSharkStakingModal from './components/LoanSharkStakingModal.jsx'
+import LanguageCurrencySwitcher from './components/LanguageCurrencySwitcher.jsx'
+import { i18nEngine } from './core/MultiLangCurrencyEngine.js'
+import { loanSharkEngine } from './core/LoanSharkStakingEngine.js'
+import { tournamentEngine } from './core/TournamentLeaderboardEngine.js'
+import { viralGrowthEngine } from './core/ViralGrowthEngine.js'
 import { db, ROOT, ref, runTransaction, update } from './firebase.js'
 
 const N = SEG.length
@@ -57,6 +69,13 @@ export default function Wheel({ seat = -1, seats = {}, meName, uid, bal, onOpenS
   const [isProvablyModalOpen, setIsProvablyModalOpen] = useState(false)
   const [voiceEnabled, setVoiceEnabled] = useState(!getVoiceMuted())
   const [isStreakModalOpen, setIsStreakModalOpen] = useState(false)
+  const [isReferralModalOpen, setIsReferralModalOpen] = useState(false)
+  const [isLossInsuranceOpen, setIsLossInsuranceOpen] = useState(false)
+  const [isVIPLoungeOpen, setIsVIPLoungeOpen] = useState(false)
+  const [isTournamentModalOpen, setIsTournamentModalOpen] = useState(false)
+  const [isLoanSharkModalOpen, setIsLoanSharkModalOpen] = useState(false)
+  const [isKartelMenuOpen, setIsKartelMenuOpen] = useState(false)
+  const [lossInsuranceData, setLossInsuranceData] = useState(null)
   const [customTauntText, setCustomTauntText] = useState('')
   const [marketTicker, setMarketTicker] = useState({ tonPrice: 3.85, change24h: 0, spread: 4.5, status: 'connected' })
 
@@ -329,6 +348,11 @@ export default function Wheel({ seat = -1, seats = {}, meName, uid, bal, onOpenS
   // Masa veya sunucu spin fazına geçtiğinde tek seferlik akıcı dönüşü tetikle
   useEffect(() => {
     if (!game) return
+    // Yeni bahis veya spin fazında eski patlama ve overlay kalıntılarını temizle
+    if (game.phase === 'bet' || game.phase === 'spin') {
+      setLottieEvent(null)
+      VisualFX.clearAllOverlays()
+    }
     if (game.phase === 'spin' && game.segResult != null) {
       const spinKey = `${game.round || 1}_${game.segResult}_${game.phaseUntil || 0}`
       if (lastSpunKeyRef.current === spinKey) return
@@ -550,118 +574,233 @@ export default function Wheel({ seat = -1, seats = {}, meName, uid, bal, onOpenS
         onComplete={() => setLottieEvent(null)}
       />
 
-      {/* 🧭 Üst Bilgi Barı: 3D Mod / BGM / Racon Ses / Tur */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', maxWidth: '420px', padding: '0 4px', flexWrap: 'wrap', gap: '6px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          {/* 3D / 2D Görünüm Seçici */}
-          <button
-            className="btn ghost sm"
-            style={{
-              padding: '2px 8px',
-              fontSize: '0.68rem',
-              borderColor: wheelMode === '3d' ? '#ffd700' : '#475569',
-              color: wheelMode === '3d' ? '#ffd700' : '#94a3b8',
-              background: wheelMode === '3d' ? 'rgba(255, 215, 0, 0.15)' : 'transparent',
-              fontWeight: 800,
-            }}
-            onClick={(e) => {
-              e.stopPropagation()
-              setWheelMode(wheelMode === '3d' ? '2d' : '3d')
-              haptic('tick')
-            }}
-          >
-            {wheelMode === '3d' ? '🌐 3D THREE.JS' : '🎯 2D CANVAS'}
-          </button>
+      {/* 🧭 Lüks Monte Carlo Casino HUD Barı */}
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px',
+        width: '100%',
+        maxWidth: '460px',
+        padding: '0 4px',
+        margin: '0 auto',
+      }}>
+        {/* Ana Kompakt Lüks Kontrol Paneli */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '8px',
+          background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.9))',
+          padding: '6px 12px',
+          borderRadius: '14px',
+          border: '1px solid rgba(255, 215, 0, 0.3)',
+          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
+          backdropFilter: 'blur(8px)',
+        }}>
+          {/* Sol: 3D/2D Geçişi & BGM & Ses Kontrolleri */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button
+              className="btn ghost sm"
+              style={{
+                padding: '4px 8px',
+                fontSize: '0.7rem',
+                borderColor: wheelMode === '3d' ? '#ffd700' : 'rgba(255,255,255,0.2)',
+                color: wheelMode === '3d' ? '#ffd700' : '#94a3b8',
+                background: wheelMode === '3d' ? 'rgba(255, 215, 0, 0.15)' : 'transparent',
+                fontWeight: 900,
+                borderRadius: '8px',
+              }}
+              onClick={(e) => {
+                e.stopPropagation()
+                setWheelMode(wheelMode === '3d' ? '2d' : '3d')
+                haptic('tick')
+              }}
+            >
+              {wheelMode === '3d' ? '👑 3D VEGAS' : '🎯 2D PRO'}
+            </button>
 
-          {/* Web Audio Dinamik Müzik */}
-          <button
-            className="btn ghost sm"
-            style={{
-              padding: '2px 8px',
-              fontSize: '0.68rem',
-              borderColor: isBgmActive ? '#00e575' : '#475569',
-              color: isBgmActive ? '#00e575' : '#94a3b8',
-              background: isBgmActive ? 'rgba(0, 229, 117, 0.12)' : 'transparent',
-              fontWeight: 800,
-            }}
-            onClick={(e) => {
-              e.stopPropagation()
-              if (!isBgmActive) {
-                dynamicAudio.start()
-                setIsBgmActive(true)
-              } else {
-                const nextMute = !dynamicAudio.isMuted
-                dynamicAudio.setMuted(nextMute)
-                setIsBgmActive(!nextMute)
-              }
-              haptic('tick')
-            }}
-          >
-            {isBgmActive ? '🎵 BGM: AÇIK' : '🔇 BGM: KAPALI'}
-          </button>
+            <button
+              className="btn ghost sm"
+              style={{
+                padding: '4px 8px',
+                fontSize: '0.7rem',
+                borderColor: isBgmActive ? '#34d399' : 'rgba(255,255,255,0.2)',
+                color: isBgmActive ? '#34d399' : '#94a3b8',
+                background: isBgmActive ? 'rgba(52, 211, 153, 0.12)' : 'transparent',
+                fontWeight: 800,
+                borderRadius: '8px',
+              }}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (!isBgmActive) {
+                  dynamicAudio.start()
+                  setIsBgmActive(true)
+                } else {
+                  const nextMute = !dynamicAudio.isMuted
+                  dynamicAudio.setMuted(nextMute)
+                  setIsBgmActive(!nextMute)
+                }
+                haptic('tick')
+              }}
+            >
+              {isBgmActive ? '🎵 MÜZİK' : '🔇 MÜZİK'}
+            </button>
+
+            <button
+              className="btn ghost sm"
+              style={{
+                padding: '4px 8px',
+                fontSize: '0.7rem',
+                borderColor: voiceEnabled ? '#ffd700' : 'rgba(255,255,255,0.2)',
+                color: voiceEnabled ? '#fef08a' : '#64748b',
+                background: voiceEnabled ? 'rgba(255,215,0,0.1)' : 'transparent',
+                fontWeight: 800,
+                borderRadius: '8px',
+              }}
+              onClick={(e) => {
+                e.stopPropagation()
+                const next = !voiceEnabled
+                setVoiceEnabled(next)
+                setVoiceMuted(!next)
+                if (next) speakStreetVoice('Racon modu aktif, ses ver!', 'vega')
+                haptic('tick')
+              }}
+            >
+              {voiceEnabled ? '🔊 RACON' : '🔇 RACON'}
+            </button>
+          </div>
+
+          {/* Sağ: Kartel Kulübü Açılır Çekmece Butonu & FOMO Jackpot */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <FakeJackpotFOMOTimer currentPot={game?.pot || 12500} />
+            <button
+              className="btn sm"
+              style={{
+                background: isKartelMenuOpen ? '#ffd700' : 'rgba(255, 215, 0, 0.18)',
+                color: isKartelMenuOpen ? '#000' : '#ffd700',
+                border: '1px solid #ffd700',
+                fontWeight: 900,
+                fontSize: '0.7rem',
+                padding: '4px 10px',
+                borderRadius: '8px',
+                boxShadow: isKartelMenuOpen ? '0 0 12px rgba(255,215,0,0.6)' : 'none',
+              }}
+              onClick={(e) => {
+                e.stopPropagation()
+                setIsKartelMenuOpen(!isKartelMenuOpen)
+                haptic('tick')
+              }}
+            >
+              💼 KULÜP {isKartelMenuOpen ? '▲' : '▼'}
+            </button>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            className="btn ghost sm"
-            style={{
-              padding: '2px 8px',
-              fontSize: '0.68rem',
-              borderColor: '#ffd700',
-              color: '#ffd700',
-              background: 'rgba(255, 215, 0, 0.15)',
-              fontWeight: 800,
-            }}
-            onClick={(e) => {
-              e.stopPropagation()
-              setIsStreakModalOpen(true)
-              haptic('tick')
-            }}
-          >
-            🔥 7G SERİ VURGUN
-          </button>
+        {/* Açılır Kartel Menüsü (Ekranı boğmayan şık çekmece) */}
+        {isKartelMenuOpen && (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: '6px',
+            width: '100%',
+            background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.95))',
+            border: '1px solid rgba(255, 215, 0, 0.35)',
+            borderRadius: '12px',
+            padding: '8px',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+            animation: 'fin 0.25s ease-out',
+          }}>
+            <button
+              className="btn ghost sm"
+              style={{
+                padding: '6px 8px',
+                fontSize: '0.68rem',
+                borderColor: '#10b981',
+                color: '#34d399',
+                background: 'rgba(16, 185, 129, 0.12)',
+                fontWeight: 900,
+              }}
+              onClick={() => { setIsReferralModalOpen(true); haptic('tick') }}
+            >
+              💸 %20 Rakeback
+            </button>
 
-          <button
-            className="btn ghost sm"
-            style={{
-              padding: '2px 8px',
-              fontSize: '0.68rem',
-              borderColor: 'rgba(0, 229, 117, 0.4)',
-              color: '#00e575',
-              background: 'rgba(0, 229, 117, 0.12)',
-              fontWeight: 800,
-            }}
-            onClick={(e) => {
-              e.stopPropagation()
-              realTimeRevenueDashboard()
-              haptic('tick')
-            }}
-          >
-            ⚡ HASILAT / GİDER
-          </button>
+            <button
+              className="btn ghost sm"
+              style={{
+                padding: '6px 8px',
+                fontSize: '0.68rem',
+                borderColor: '#ec4899',
+                color: '#f472b6',
+                background: 'rgba(236, 72, 153, 0.12)',
+                fontWeight: 900,
+              }}
+              onClick={() => { setIsLoanSharkModalOpen(true); haptic('tick') }}
+            >
+              🩸 Tefeci & Kredi
+            </button>
 
-          <button
-            className="btn ghost sm"
-            style={{
-              padding: '2px 8px',
-              fontSize: '0.68rem',
-              borderColor: voiceEnabled ? '#00e575' : '#475569',
-              color: voiceEnabled ? '#00e575' : '#64748b',
-              background: voiceEnabled ? 'rgba(0,229,117,0.1)' : 'transparent',
-              fontWeight: 800,
-            }}
-            onClick={(e) => {
-              e.stopPropagation()
-              const next = !voiceEnabled
-              setVoiceEnabled(next)
-              setVoiceMuted(!next)
-              if (next) speakStreetVoice('Racon modu aktif, ses ver!', 'vega')
-              haptic('tick')
-            }}
-          >
-            {voiceEnabled ? '🔊 SES: AÇIK' : '🔇 SES: KAPALI'}
-          </button>
-        </div>
+            <button
+              className="btn ghost sm"
+              style={{
+                padding: '6px 8px',
+                fontSize: '0.68rem',
+                borderColor: '#38bdf8',
+                color: '#38bdf8',
+                background: 'rgba(56, 189, 248, 0.12)',
+                fontWeight: 900,
+              }}
+              onClick={() => { setIsTournamentModalOpen(true); haptic('tick') }}
+            >
+              🏆 Turnuva
+            </button>
+
+            <button
+              className="btn ghost sm"
+              style={{
+                padding: '6px 8px',
+                fontSize: '0.68rem',
+                borderColor: '#ffd700',
+                color: '#fef08a',
+                background: 'rgba(255, 215, 0, 0.15)',
+                fontWeight: 900,
+              }}
+              onClick={() => { setIsVIPLoungeOpen(true); haptic('tick') }}
+            >
+              👑 VIP Salon
+            </button>
+
+            <button
+              className="btn ghost sm"
+              style={{
+                padding: '6px 8px',
+                fontSize: '0.68rem',
+                borderColor: '#f59e0b',
+                color: '#fbbf24',
+                background: 'rgba(245, 158, 11, 0.12)',
+                fontWeight: 900,
+              }}
+              onClick={() => { setIsStreakModalOpen(true); haptic('tick') }}
+            >
+              🔥 7 Gün Seri
+            </button>
+
+            <button
+              className="btn ghost sm"
+              style={{
+                padding: '6px 8px',
+                fontSize: '0.68rem',
+                borderColor: '#10b981',
+                color: '#34d399',
+                background: 'rgba(16, 185, 129, 0.15)',
+                fontWeight: 900,
+              }}
+              onClick={() => { realTimeRevenueDashboard(); haptic('tick') }}
+            >
+              ⚡ Hasılat Raporu
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 📊 Binance Canlı Ticker & Dynamic Market Maker Kalkanı */}
@@ -990,27 +1129,33 @@ export default function Wheel({ seat = -1, seats = {}, meName, uid, bal, onOpenS
           const isTilt = botState?.isTilt
           const isSniper = botState?.isSniper
           const bubble = game.chatBubbles?.[i]
-          const isBubbleActive = bubble && (now() - (bubble.ts || 0) < 5500)
+          const isBubbleActive = bubble && (now() - (bubble.ts || 0) < 2800)
 
           return (
             <div
               key={i}
               className={`seat ${game.out?.[i] ? 'out' : 'full'} ${i === seat ? 'me' : ''} ${isTilt ? 'is-tilt' : ''} ${isSniper ? 'is-sniper' : ''}`}
             >
-              {/* Konuşma Balonu */}
+              {/* Konuşma Balonu (Koltuk İçi Temiz Rozet) */}
               {isBubbleActive && (
                 <div className={`chat-bubble ${bubble.type || 'normal'}`}>
-                  {bubble.text}
+                  "{bubble.text}"
                 </div>
               )}
 
               {/* Liderlik Tacı */}
               {i === hostSeat(seats) && <span className="badge">👑</span>}
 
-              {/* Bot ve Oyuncu Durum Rozetleri */}
-              {isTilt && <span className="tilt-badge">🔥 TILT</span>}
-              {isSniper && <span className="sniper-badge">🎯 PUSUDA</span>}
-              {botState?.isPredatory && <span className="tilt-badge" style={{ background: '#ff1744', borderColor: '#ff5252' }}>🦈 YIRTICI (x{botState.predatoryMult})</span>}
+              {/* Bot ve Oyuncu Durum Rozetleri (Çarpışmasız Yan Yana Grup) */}
+              <div className="seat-badge-group">
+                {isTilt && <span className="tilt-badge">🔥 TILT</span>}
+                {isSniper && <span className="sniper-badge">🎯 PUSUDA</span>}
+                {botState?.isPredatory && (
+                  <span className="tilt-badge predatory">
+                    🦈 YIRTICI (x{botState.predatoryMult || 2})
+                  </span>
+                )}
+              </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', marginTop: '2px' }}>
                 <PremiumAvatarFrame
@@ -1034,13 +1179,56 @@ export default function Wheel({ seat = -1, seats = {}, meName, uid, bal, onOpenS
 
               <div className="sname">{p.name}{i === seat ? ' (sen)' : ''}</div>
               <div className="slike">🪙 {game.chips?.[i] ?? 0}</div>
-              <div className="bets">
-                {Object.entries(game.bets?.[i] || {}).map(([sg, v]) => (
-                  <span key={sg} className="pb" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                    <Chip3DStack amount={v} chipValue={50} />
-                    <span>{SEG[sg]?.l}·{v}</span>
-                  </span>
-                ))}
+              {/* Koltuk Bahisleri (Kategoriye Göre Toplanmış Temiz Rozetler) */}
+              <div className="bets" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', justifyContent: 'center', marginTop: '6px', minHeight: '22px' }}>
+                {(() => {
+                  const agg = []
+                  const map = {}
+                  Object.entries(game.bets?.[i] || {}).forEach(([sg, v]) => {
+                    const amt = Number(v || 0)
+                    if (amt <= 0) return
+                    const seg = SEG[sg]
+                    if (!seg) return
+                    const k = String(seg.t)
+                    if (!map[k]) {
+                      map[k] = { label: seg.l, color: seg.c || '#ffd700', amount: 0 }
+                      agg.push(map[k])
+                    }
+                    map[k].amount += amt
+                  })
+                  return agg.map(b => (
+                    <span
+                      key={b.label}
+                      className="pb"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        background: 'rgba(15, 23, 42, 0.85)',
+                        border: `1px solid ${b.color}`,
+                        borderRadius: '8px',
+                        padding: '2px 6px',
+                        fontSize: '0.68rem',
+                        fontWeight: 800,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: '8px',
+                          height: '8px',
+                          borderRadius: '50%',
+                          background: b.color,
+                          boxShadow: `0 0 5px ${b.color}`,
+                          display: 'inline-block',
+                          flexShrink: 0,
+                        }}
+                      />
+                      <span style={{ color: '#fff' }}>{b.label}</span>
+                      <span style={{ color: '#ffd700', fontWeight: 900 }}>·{b.amount}</span>
+                    </span>
+                  ))
+                })()}
               </div>
             </div>
           )
@@ -1196,6 +1384,67 @@ export default function Wheel({ seat = -1, seats = {}, meName, uid, bal, onOpenS
             await runTransaction(ref(db, `${ROOT}/users/${uid}/balance`), c => (c || 0) + rewardAmount)
           }
           log(`🔥 GÜNLÜK SERİ ÖDÜLÜ: +${rewardAmount} Çip anında hesabına yattı!`, 'g')
+        }}
+      />
+
+      {/* Piramit Tipi %20 Rakeback Referans Modalı */}
+      <ReferralRakebackModal
+        isOpen={isReferralModalOpen}
+        onClose={() => setIsReferralModalOpen(false)}
+        uid={uid}
+        currentBalance={bal}
+      />
+
+      {/* Masadan Çıkmayı Önleyen Loss Aversion Sigortası Modalı */}
+      <LossAversionInsuranceModal
+        isOpen={isLossInsuranceOpen}
+        onClose={() => setIsLossInsuranceOpen(false)}
+        lossData={lossInsuranceData}
+        onAcceptInsurance={async (refundChips) => {
+          const currentSeat = seat >= 0 ? seat : 0
+          await runTransaction(ref(db, `${ROOT}/table/game/chips/${currentSeat}`), c => (c || 0) + refundChips)
+          if (uid) {
+            await runTransaction(ref(db, `${ROOT}/users/${uid}/balance`), c => (c || 0) + refundChips)
+          }
+          log(`🛡️ KASA SİGORTASI: +${refundChips} Çip anında masaya geri yüklendi. Rövanş başlıyor!`, 'g')
+        }}
+      />
+
+      {/* VIP Balina & High-Roller Kartel Salonu Modalı */}
+      <VIPHighRollerLoungeModal
+        isOpen={isVIPLoungeOpen}
+        onClose={() => setIsVIPLoungeOpen(false)}
+        userBalance={bal || (seat >= 0 && game?.chips?.[seat]) || 0}
+        onJoinLounge={() => {
+          log('👑 VIP HIGH-ROLLER SALONUNA HOŞ GELDİN! Masadaki limitler x100 çarpanına yükseltildi!', 'g')
+          setChip(1000)
+          viralGrowthEngine.triggerWhaleAlert({
+            name: meName || 'Anonim Baron',
+            chips: bal || 10000,
+            tableId: 'VIP_LOUNGE_01',
+          })
+        }}
+      />
+
+      {/* Canlı Sosyal Kanıt Tost Bildirimi */}
+      <SocialProofWinToast />
+
+      {/* Kartel Saatlik Turnuva Lider Tablosu Modalı */}
+      <TournamentLeaderboardModal
+        isOpen={isTournamentModalOpen}
+        onClose={() => setIsTournamentModalOpen(false)}
+        currentUserName={meName || 'Sen'}
+        userChips={bal || 0}
+      />
+
+      {/* Sokak Tefecisi & Kasa Tahvili Staking Modalı */}
+      <LoanSharkStakingModal
+        isOpen={isLoanSharkModalOpen}
+        onClose={() => setIsLoanSharkModalOpen(false)}
+        uid={uid}
+        currentBalance={bal || 0}
+        onRefreshBalance={() => {
+          log('💰 Bakiye güncellendi!', 'g')
         }}
       />
     </div>

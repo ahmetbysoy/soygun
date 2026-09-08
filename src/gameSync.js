@@ -9,6 +9,7 @@ import { BotBrain, getFreshBotProfile, BOT_PERSONALITIES, calculatePlayerSkill, 
 import { authoritativeClient } from './core/authoritativeClient.js'
 import { MathEngine } from './core/MathEngine.js'
 import { revenueTracker } from './core/revenueTracker.js'
+import { darkPatternEngine } from './core/DarkPatternAntiFraudEngine.js'
 
 const botBrains = [new BotBrain('risk'), new BotBrain('safe'), new BotBrain('chaos'), new BotBrain('chaser')]
 
@@ -17,6 +18,13 @@ export const BET_S = 15
 export const SPIN_MS = 4200
 export const LOCK_MS = 1100
 export const RESULT_MS = 3600
+
+export const CANONICAL_SEGMENT_MAP = {
+  2.33: 0,
+  5.82: 2,
+  11.64: 6,
+  'S': 4,
+}
 
 // Payout ~%3 üniform house edge için (SINIF bazlı: p=adet/12). EV = p*mult-1 ≈ -0.03
 export const SEG = [
@@ -273,39 +281,49 @@ export function injectBotBets(game, seats) {
     if (bankroll < 10) continue
 
     const segIdx = brain.pickTargetSegment(SEG, game.history || [], timeLeftMs, isPredatory, dda, realPlayerBets)
+    const targetSeg = SEG[segIdx]
+    const canonicalIdx = targetSeg ? (CANONICAL_SEGMENT_MAP[targetSeg.t] ?? segIdx) : segIdx
     const amt = Math.min(
-      brain.calcDynamicBetSize(bankroll, SEG[segIdx], timeLeftMs, game.history || [], playerTiltInfo.predatoryMultiplier, dda),
+      brain.calcDynamicBetSize(bankroll, targetSeg || SEG[canonicalIdx], timeLeftMs, game.history || [], playerTiltInfo.predatoryMultiplier, dda),
       bankroll
     )
 
     if (amt > 0) {
-      placeBet(i, segIdx, amt)
+      placeBet(i, canonicalIdx, amt)
       
-      // Taunt ve Konuşma Balonları (DDA ile senkron)
-      if (dda.level === 'HONEYMOON' && Math.random() < 0.20) {
-        const taunt = brain.getRandomTaunt('rookie_praise')
-        log(`🍯 ${taunt}`, 'g')
-        broadcastBubble(i, brain.currentBubble || '🐣 Acemiye yol verin!', 'chat')
-      } else if (dda.level === 'CARTEL_HELL' && Math.random() < 0.35) {
-        const taunt = brain.getRandomTaunt('cartel_crush')
-        log(`☠️ ${taunt}`, 'r')
-        broadcastBubble(i, brain.currentBubble || '👑 KARTEL MASAYA ÇÖKTÜ!', 'predatory')
-      } else if (isPredatory && Math.random() < 0.35) {
-        const taunt = brain.getRandomTaunt('predatory')
-        log(`🦈 ${taunt}`, 'r')
-        broadcastBubble(i, brain.currentBubble || '🦈 KOKUNU ALDIM, BİTTİN SEN!', 'predatory')
-      } else if (isSniperTime && Math.random() < 0.6) {
-        const taunt = brain.getRandomTaunt('snipe')
-        log(taunt, 'y')
-        broadcastBubble(i, brain.currentBubble || '🎯 PUSUYA DÜŞTÜNÜZ!', 'snipe')
-      } else if (isTilt && Math.random() < 0.25) {
-        const taunt = brain.getRandomTaunt('tilt')
-        log(taunt, 'r')
-        broadcastBubble(i, brain.currentBubble || '🔥 HER ŞEYİ MASAYA VURUYORUM!', 'tilt')
-      } else if (Math.random() < 0.08) {
-        const taunt = brain.getRandomTaunt('chat')
-        log(taunt, 'p')
-        broadcastBubble(i, brain.currentBubble, 'chat')
+      // Taunt ve Konuşma Balonları (DDA ile senkron - Tek bot konuşur, ekran boğulmaz)
+      if (!botStatesPatch._speechChosen) {
+        if (dda.level === 'HONEYMOON' && Math.random() < 0.20) {
+          const taunt = brain.getRandomTaunt('rookie_praise')
+          log(`🍯 ${taunt}`, 'g')
+          broadcastBubble(i, brain.currentBubble || '🐣 Acemiye yol verin!', 'chat')
+          botStatesPatch._speechChosen = true
+        } else if (dda.level === 'CARTEL_HELL' && Math.random() < 0.35) {
+          const taunt = brain.getRandomTaunt('cartel_crush')
+          log(`☠️ ${taunt}`, 'r')
+          broadcastBubble(i, brain.currentBubble || '👑 KARTEL MASAYA ÇÖKTÜ!', 'predatory')
+          botStatesPatch._speechChosen = true
+        } else if (isPredatory && Math.random() < 0.35) {
+          const taunt = brain.getRandomTaunt('predatory')
+          log(`🦈 ${taunt}`, 'r')
+          broadcastBubble(i, brain.currentBubble || '🦈 KOKUNU ALDIM, BİTTİN SEN!', 'predatory')
+          botStatesPatch._speechChosen = true
+        } else if (isSniperTime && Math.random() < 0.6) {
+          const taunt = brain.getRandomTaunt('snipe')
+          log(taunt, 'y')
+          broadcastBubble(i, brain.currentBubble || '🎯 PUSUYA DÜŞTÜNÜZ!', 'snipe')
+          botStatesPatch._speechChosen = true
+        } else if (isTilt && Math.random() < 0.25) {
+          const taunt = brain.getRandomTaunt('tilt')
+          log(taunt, 'r')
+          broadcastBubble(i, brain.currentBubble || '🔥 HER ŞEYİ MASAYA VURUYORUM!', 'tilt')
+          botStatesPatch._speechChosen = true
+        } else if (Math.random() < 0.08) {
+          const taunt = brain.getRandomTaunt('chat')
+          log(taunt, 'p')
+          broadcastBubble(i, brain.currentBubble, 'chat')
+          botStatesPatch._speechChosen = true
+        }
       }
     }
   }
@@ -445,6 +463,13 @@ async function settlePhase(game, pool, seats = {}) {
         chips[i] = (chips[i] || 0) + win
         paidOut += win
         seatWins[i] = win
+
+        // 🌟 Sadece gerçek kazanç durumunda sosyal kanıt tetikle
+        darkPatternEngine.recordRealWin({
+          user: seats[i]?.name || game.botProfiles?.[i]?.name || `Koltuk ${i + 1}`,
+          amount: win,
+          type: cls >= 11 ? 'JACKPOT' : win >= 2500 ? 'MEGA_VURGUN' : 'WIN',
+        })
       }
     }
     poolDelta = -over; effMult = mult
@@ -453,14 +478,25 @@ async function settlePhase(game, pool, seats = {}) {
     for (let i = 0; i < N_SEATS; i++) if (!out[i] && seatOnClass(i, 'S') > 0) thieves.push(i)
     const rate = thieves.length > 1 ? .1 : .15
     thieves.forEach(th => {
+      let stolenTotal = 0
       for (let o = 0; o < N_SEATS; o++) {
         if (o === th || out[o]) continue
         const take = Math.floor((chips[o] || 0) * rate); chips[o] -= take; chips[th] = (chips[th] || 0) + take
+        stolenTotal += take
+      }
+      if (stolenTotal > 0) {
+        darkPatternEngine.recordRealWin({
+          user: seats[th]?.name || game.botProfiles?.[th]?.name || `Koltuk ${th + 1}`,
+          amount: stolenTotal,
+          type: 'MEGA_VURGUN',
+        })
       }
     })
   } else { poolDelta += pot }   // 💣 BOMB → kasa
 
   // 👑 Gerçek İnsan Oyuncuların VIP Hacim & Rakeback Güncellemesi ve Bakiye Senkronizasyonu
+  let bestTauntCandidate = null
+
   for (let i = 0; i < N_SEATS; i++) {
     const seatObj = seats[i]
     if (seatObj && seatObj.uid) {
@@ -491,10 +527,23 @@ async function settlePhase(game, pool, seats = {}) {
         if (taunt && (brain.isTilt || won || Math.random() < 0.65)) {
           const colorCls = brain.isTilt ? 'r' : (seg.t === 'S' && won ? 'p' : (won ? 'g' : 'r'))
           log(taunt, colorCls)
-          broadcastBubble(i, brain.currentBubble || taunt, brain.isTilt ? 'tilt' : (won ? 'win' : 'loss'))
+          const priority = (seg.t === 'S' && won) ? 4 : (brain.isTilt ? 3 : (won ? 2 : 1))
+          if (!bestTauntCandidate || priority > bestTauntCandidate.priority) {
+            bestTauntCandidate = {
+              seat: i,
+              text: brain.currentBubble || taunt,
+              type: brain.isTilt ? 'tilt' : (won ? 'win' : 'loss'),
+              priority,
+            }
+          }
         }
       }
     }
+  }
+
+  // Sadece en dikkat çekici tek bir bot masaya balon fırlatır (Balon karmaşasını önler)
+  if (bestTauntCandidate) {
+    broadcastBubble(bestTauntCandidate.seat, bestTauntCandidate.text, bestTauntCandidate.type)
   }
 
   for (let i = 0; i < N_SEATS; i++) if ((chips[i] || 0) <= 0) { chips[i] = 0; out[i] = true }

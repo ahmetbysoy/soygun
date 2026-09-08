@@ -135,9 +135,11 @@ export default function LottieAnimationOverlay({
 }) {
   const containerRef = useRef(null)
   const animInstance = useRef(null)
+  const onCompleteRef = useRef(onComplete)
+  onCompleteRef.current = onComplete
 
   useEffect(() => {
-    if (!type || !containerRef.current) return
+    if (!type) return
 
     let animData = null
     if (type === 'bomb') {
@@ -147,68 +149,114 @@ export default function LottieAnimationOverlay({
     }
 
     try {
-      animInstance.current = lottie.loadAnimation({
-        container: containerRef.current,
-        renderer: 'svg',
-        loop: false,
-        autoplay: true,
-        animationData: animData,
-      })
+      if (containerRef.current) {
+        containerRef.current.innerHTML = ''
+        animInstance.current = lottie.loadAnimation({
+          container: containerRef.current,
+          renderer: 'svg',
+          loop: false,
+          autoplay: true,
+          animationData: animData,
+        })
+      }
 
+      // Kesin ve tavizsiz otomatik kapanma zamanlayıcısı (Asla takılı kalmaz)
       const timer = setTimeout(() => {
-        if (onComplete) onComplete()
-      }, 2600)
+        if (onCompleteRef.current) {
+          onCompleteRef.current()
+        }
+      }, 2100)
 
       return () => {
         clearTimeout(timer)
         if (animInstance.current) {
-          animInstance.current.destroy()
+          try {
+            animInstance.current.destroy()
+          } catch {
+            // ignore
+          }
+          animInstance.current = null
         }
       }
     } catch (e) {
       console.warn('Lottie render hatası:', e)
+      // Hata durumunda da ekranın kilitlenmesini engelle
+      const fallbackTimer = setTimeout(() => {
+        if (onCompleteRef.current) onCompleteRef.current()
+      }, 1000)
+      return () => clearTimeout(fallbackTimer)
     }
-  }, [type, onComplete])
+  }, [type])
 
   if (!type) return null
 
+  const handleDismiss = (e) => {
+    e.stopPropagation()
+    if (onCompleteRef.current) {
+      onCompleteRef.current()
+    }
+  }
+
   return (
     <div
+      onClick={handleDismiss}
       style={{
         position: 'fixed',
         inset: 0,
         zIndex: 10000,
-        pointerEvents: 'none',
+        pointerEvents: 'auto',
+        cursor: 'pointer',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        background: type === 'bomb' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(0, 0, 0, 0.35)',
-        backdropFilter: 'blur(3px)',
+        background: type === 'bomb' ? 'rgba(239, 68, 68, 0.22)' : 'rgba(0, 0, 0, 0.45)',
+        backdropFilter: 'blur(4px)',
         animation: 'fadeIn 0.2s ease-out',
+        userSelect: 'none',
       }}
+      title="Kapatmak için dokun"
     >
-      <div ref={containerRef} style={{ width: 280, height: 280 }} />
+      <div ref={containerRef} style={{ width: 280, height: 280, pointerEvents: 'none' }} />
       {text && (
         <div
           style={{
             marginTop: -20,
-            fontSize: 28,
+            fontSize: '1.75rem',
             fontWeight: 900,
             color: type === 'bomb' ? '#ff3b5c' : '#ffd700',
-            textShadow: '0 0 20px rgba(0,0,0,0.9), 0 0 10px currentColor',
+            textShadow: '0 0 25px rgba(0,0,0,0.9), 0 0 12px currentColor',
             letterSpacing: 1.5,
             textAlign: 'center',
+            padding: '0 16px',
+            pointerEvents: 'none',
           }}
         >
           {text}
           {amount > 0 && (
-            <div style={{ fontSize: 20, color: '#00e575', marginTop: 4 }}>
+            <div style={{ fontSize: '1.25rem', color: '#00e575', marginTop: 4 }}>
               +{amount.toLocaleString()} 💰
             </div>
           )}
         </div>
       )}
+
+      {/* Dokunup geçme ipucu butonu */}
+      <div
+        style={{
+          marginTop: 24,
+          fontSize: '0.75rem',
+          fontWeight: 800,
+          color: 'rgba(255, 255, 255, 0.75)',
+          background: 'rgba(0, 0, 0, 0.5)',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          borderRadius: '20px',
+          padding: '4px 12px',
+          letterSpacing: '0.5px',
+        }}
+      >
+        ✕ Dokun ve Geç
+      </div>
     </div>
   )
 }

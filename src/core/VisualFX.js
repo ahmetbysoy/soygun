@@ -384,7 +384,8 @@ export class VisualFX {
     overlay.style.position = 'fixed'
     overlay.style.inset = '0'
     overlay.style.zIndex = '99999'
-    overlay.style.pointerEvents = 'none'
+    overlay.style.pointerEvents = 'auto'
+    overlay.style.cursor = 'pointer'
     overlay.style.display = 'flex'
     overlay.style.flexDirection = 'column'
     overlay.style.alignItems = 'center'
@@ -393,6 +394,7 @@ export class VisualFX {
     overlay.style.opacity = '0'
     overlay.style.transform = 'scale(0.8)'
     overlay.style.transition = 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+    overlay.onclick = () => overlay.remove()
 
     overlay.innerHTML = `
       <div style="
@@ -414,6 +416,9 @@ export class VisualFX {
         <div style="font-size: 0.78rem; font-weight: 800; color: #00e575; letter-spacing: 1px; margin-top: 10px;">
           ${subtitle}
         </div>
+        <div style="font-size: 0.65rem; color: rgba(255,255,255,0.6); margin-top: 12px;">
+          ✕ Dokun ve Kapat
+        </div>
       </div>
     `
 
@@ -425,9 +430,11 @@ export class VisualFX {
     })
 
     setTimeout(() => {
-      overlay.style.opacity = '0'
-      overlay.style.transform = 'scale(1.1)'
-      setTimeout(() => overlay.remove(), 400)
+      if (document.body.contains(overlay)) {
+        overlay.style.opacity = '0'
+        overlay.style.transform = 'scale(1.1)'
+        setTimeout(() => overlay.remove(), 400)
+      }
     }, 2400)
   }
 
@@ -443,7 +450,8 @@ export class VisualFX {
     overlay.style.position = 'fixed'
     overlay.style.inset = '0'
     overlay.style.zIndex = '99999'
-    overlay.style.pointerEvents = 'none'
+    overlay.style.pointerEvents = 'auto'
+    overlay.style.cursor = 'pointer'
     overlay.style.display = 'flex'
     overlay.style.flexDirection = 'column'
     overlay.style.alignItems = 'center'
@@ -452,6 +460,7 @@ export class VisualFX {
     overlay.style.opacity = '0'
     overlay.style.transform = 'scale(0.8)'
     overlay.style.transition = 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+    overlay.onclick = () => overlay.remove()
 
     overlay.innerHTML = `
       <div style="
@@ -472,6 +481,9 @@ export class VisualFX {
         <div style="font-size: 0.78rem; font-weight: 800; color: #ff99cc; letter-spacing: 1px; margin-top: 10px;">
           ${robberName} MASAYI KURU SAÇTI!
         </div>
+        <div style="font-size: 0.65rem; color: rgba(255,255,255,0.6); margin-top: 12px;">
+          ✕ Dokun ve Kapat
+        </div>
       </div>
     `
 
@@ -483,10 +495,25 @@ export class VisualFX {
     })
 
     setTimeout(() => {
-      overlay.style.opacity = '0'
-      overlay.style.transform = 'scale(1.1)'
-      setTimeout(() => overlay.remove(), 400)
+      if (document.body.contains(overlay)) {
+        overlay.style.opacity = '0'
+        overlay.style.transform = 'scale(1.1)'
+        setTimeout(() => overlay.remove(), 400)
+      }
     }, 2200)
+  }
+
+  /**
+   * 🧹 Tüm askıda kalmış DOM katmanlarını (Splash, Modal, Floating Badge) temizle
+   */
+  static clearAllOverlays() {
+    const ids = ['victory-splash-modal', 'heist-splash-modal']
+    ids.forEach(id => {
+      const el = document.getElementById(id)
+      if (el) el.remove()
+    })
+    const badges = document.querySelectorAll('.floating-dopamine-badge')
+    badges.forEach(b => b.remove())
   }
 }
 

@@ -301,16 +301,17 @@ export default function CanvasWheel({
         if (isWinner) {
           segGrad.addColorStop(0, '#ffffff')
           segGrad.addColorStop(0.35, '#ffd700')
-          segGrad.addColorStop(1, seg.c || '#f5b301')
+          segGrad.addColorStop(1, '#f59e0b')
         } else if (isHovered) {
-          segGrad.addColorStop(0, '#38bdf8')
-          segGrad.addColorStop(0.4, seg.c || '#2563eb')
-          segGrad.addColorStop(1, '#0f172a')
+          segGrad.addColorStop(0, '#7dd3fc')
+          segGrad.addColorStop(0.5, seg.c || '#2563eb')
+          segGrad.addColorStop(1, '#0369a1')
         } else {
-          segGrad.addColorStop(0, '#10141c')
-          segGrad.addColorStop(0.28, seg.c || '#2563eb')
-          segGrad.addColorStop(0.88, '#070a10')
-          segGrad.addColorStop(1, '#020406')
+          // Parlak ve zengin canlı casino tonları (Karanlık çamur renkler kalktı)
+          segGrad.addColorStop(0, '#f8fafc')
+          segGrad.addColorStop(0.22, seg.c || '#2563eb')
+          segGrad.addColorStop(0.75, seg.c || '#1d4ed8')
+          segGrad.addColorStop(1, '#0f172a')
         }
 
         ctx.fillStyle = segGrad
