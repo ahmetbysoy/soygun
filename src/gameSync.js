@@ -27,13 +27,14 @@ export const CANONICAL_SEGMENT_MAP = {
 }
 
 // Payout ~%3 üniform house edge için (SINIF bazlı: p=adet/12). EV = p*mult-1 ≈ -0.03
+// 🎨 "Maison Noir" paleti (v2): alaşımlı altın, bordo, zümrüt, ametist, obsidyen.
 export const SEG = [
-  { t: 2.33, c: '#e23b3b', l: 'x2.33' }, { t: 0, c: '#1a1d24', l: '💣' },
-  { t: 5.82, c: '#f5b301', l: 'x5.82' }, { t: 2.33, c: '#e23b3b', l: 'x2.33' },
-  { t: 'S', c: '#a05ce6', l: '🥷' }, { t: 2.33, c: '#e23b3b', l: 'x2.33' },
-  { t: 11.64, c: '#00c26e', l: 'x11.64' }, { t: 2.33, c: '#e23b3b', l: 'x2.33' },
-  { t: 5.82, c: '#f5b301', l: 'x5.82' }, { t: 'S', c: '#a05ce6', l: '🥷' },
-  { t: 2.33, c: '#e23b3b', l: 'x2.33' }, { t: 0, c: '#1a1d24', l: '💣' },
+  { t: 2.33, c: '#A83A31', l: 'x2.33' }, { t: 0, c: '#0E1116', l: '💣' },
+  { t: 5.82, c: '#C9A24B', l: 'x5.82' }, { t: 2.33, c: '#A83A31', l: 'x2.33' },
+  { t: 'S', c: '#5B3E8F', l: '🥷' }, { t: 2.33, c: '#A83A31', l: 'x2.33' },
+  { t: 11.64, c: '#1FA97C', l: 'x11.64' }, { t: 2.33, c: '#A83A31', l: 'x2.33' },
+  { t: 5.82, c: '#C9A24B', l: 'x5.82' }, { t: 'S', c: '#5B3E8F', l: '🥷' },
+  { t: 2.33, c: '#A83A31', l: 'x2.33' }, { t: 0, c: '#0E1116', l: '💣' },
 ]
 const N = SEG.length
 const rnd = n => Math.floor(Math.random() * n)

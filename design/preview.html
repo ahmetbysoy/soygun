@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOYGUN ÇARKI · Maison Noir — Premium Casino Redesign (Maket)</title>
+<style>
+/* ══════════ MAISON NOIR · DESIGN PREVIEW (standalone maket) ══════════
+   Bu dosya src/index.css'teki tasarım dilinin birebir prototipidir.
+   Harici asset YOKTUR — offline açılır. Gerçek entegrasyon: src/index.css
+   + gameSync.js SEG paleti zaten güncellendi (v2). */
+
+:root{
+  --bg-deep:#04050A; --panel:rgba(14,17,24,.88); --panel2:rgba(20,24,33,.92);
+  --felt:#0C3A2C; --line:rgba(201,162,75,.16); --line-soft:rgba(148,163,184,.12);
+  --gold:#C9A24B; --gold2:#E9D08C; --gold-hi:#F7E7B4; --gold-deep:#8C6B2F;
+  --gold-foil:linear-gradient(155deg,var(--gold-hi) 0%,var(--gold2) 22%,var(--gold) 46%,var(--gold-deep) 64%,var(--gold2) 86%,var(--gold-hi) 100%);
+  --hairline-foil:linear-gradient(90deg,transparent,rgba(233,208,140,.75) 18%,rgba(140,107,47,.2) 50%,rgba(233,208,140,.75) 82%,transparent);
+  --red:#B3372F; --red-glow:rgba(179,55,47,.4); --green:#1FA97C; --green-glow:rgba(31,169,124,.35);
+  --purple:#6D4AA8;
+  --font-display:'Cinzel','Playfair Display','Didot',Georgia,serif;
+  --font-body:'Inter','Segoe UI',system-ui,sans-serif;
+  --font-num:'JetBrains Mono','SF Mono',ui-monospace,monospace;
+  --r-lg:20px; --r-md:14px; --r-pill:999px;
+  --shadow-deep:0 24px 48px -12px rgba(0,0,0,.75),0 4px 12px rgba(0,0,0,.5);
+  --shadow-gold:0 0 24px rgba(201,162,75,.18),0 0 4px rgba(201,162,75,.25);
+  --inner-frame:inset 0 1px 0 rgba(255,255,255,.045),inset 0 0 0 1px rgba(255,255,255,.02);
+}
+/* ESKİ SKİN (before) — tek tuşla karşılaştırma */
+body.before{
+  --bg-deep:#0b0e14; --panel:#151a24; --panel2:#1c2331; --felt:#16202e;
+  --line:#2a3346; --line-soft:#232b3b; --gold:#f5b301; --gold2:#ffd75e;
+  --gold-hi:#ffd75e; --gold-deep:#b58200;
+  --gold-foil:linear-gradient(135deg,#ffd700,#ff9900);
+  --hairline-foil:linear-gradient(90deg,transparent,transparent);
+  --red:#e23b3b; --green:#00c26e; --purple:#a05ce6;
+  --font-display:'Segoe UI',system-ui,sans-serif;
+  --r-lg:14px; --shadow-deep:0 0 40px rgba(0,0,0,.9); --shadow-gold:0 0 20px rgba(245,179,1,.15);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:var(--font-body); color:#E8E6DF; min-height:100vh; padding:18px 16px 60px;
+  background:
+    radial-gradient(900px 420px at 50% -8%,rgba(233,208,140,.07),transparent 62%),
+    radial-gradient(1200px 700px at 50% 42%,rgba(12,58,44,.35),transparent 70%),
+    radial-gradient(1600px 900px at 50% 50%,transparent 55%,rgba(0,0,0,.55) 100%),
+    var(--bg-deep);
+  background-attachment:fixed;
+}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+  background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.06) 0 1px,transparent 1px 3px),
+  repeating-linear-gradient(90deg,rgba(255,255,255,.04) 0 1px,transparent 1px 4px);z-index:0}
+.wrap{position:relative;z-index:1;max-width:1120px;margin:0 auto}
+
+/* ── header ── */
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:13px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:14px}
+.brand h1{font-family:var(--font-display);font-size:1.3rem;font-weight:700;letter-spacing:.28em;text-transform:uppercase;
+  background:var(--gold-foil);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.brand .est{font-size:.58rem;color:#79808C;letter-spacing:.34em;text-transform:uppercase}
+.hd-right{display:flex;gap:8px;align-items:center}
+.tag{font-size:.68rem;font-weight:600;color:#B9C0CC;border:1px solid var(--line);border-radius:var(--r-pill);
+  padding:5px 13px;letter-spacing:.06em;background:rgba(10,12,18,.65);font-variant-numeric:tabular-nums}
+.dot-live{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);margin-right:6px;animation:softPulse 1.6s infinite}
+
+.btn{position:relative;overflow:hidden;background:var(--gold-foil);color:#171310;border:none;border-radius:12px;
+  padding:10px 20px;font-weight:800;font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;
+  box-shadow:0 6px 18px -6px rgba(201,162,75,.55),inset 0 1px 0 rgba(255,255,255,.45),inset 0 -2px 4px rgba(115,84,30,.45);
+  transition:transform .15s,filter .2s,box-shadow .25s;font-family:var(--font-body)}
+.btn::after{content:'';position:absolute;top:0;bottom:0;left:-60%;width:40%;transform:skewX(-20deg);
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.65),transparent);transition:left .5s}
+.btn:hover::after{left:130%}
+.btn:hover{transform:translateY(-1px);filter:brightness(1.05)}
+.btn:active{transform:translateY(1px) scale(.99)}
+.btn.ghost{background:rgba(255,255,255,.02);color:#C7CCD6;border:1px solid var(--line-soft);box-shadow:none;text-transform:none;letter-spacing:.04em;font-weight:700}
+.btn.ghost:hover{border-color:var(--line);color:var(--gold2);background:rgba(201,162,75,.05)}
+.btn.sm{padding:6px 13px;font-size:.68rem;border-radius:9px}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.btn:disabled::after{display:none}
+
+/* ── ticker ── */
+.econbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;font-size:.74rem;color:#98A0AE;
+  letter-spacing:.04em;margin-bottom:16px;padding:9px 12px;background:rgba(10,12,18,.72);
+  border:1px solid var(--line);border-radius:var(--r-md);position:relative;overflow:hidden}
+.econbar::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:var(--hairline-foil)}
+.econbar span{padding:0 14px;border-right:1px solid rgba(148,163,184,.14);white-space:nowrap}
+.econbar span:last-child{border-right:none}
+.econbar b{color:var(--gold2);font-family:var(--font-num);font-variant-numeric:tabular-nums}
+
+/* ── layout ── */
+.table-grid{display:grid;grid-template-columns:240px minmax(0,1fr) 260px;gap:16px;align-items:start}
+@media (max-width:1020px){.table-grid{grid-template-columns:1fr}.side{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.center{order:-1}}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);
+  box-shadow:var(--shadow-deep),var(--inner-frame);position:relative;overflow:hidden}
+.panel::before{content:'';position:absolute;top:0;left:12%;right:12%;height:1px;background:var(--hairline-foil);opacity:.6}
+
+/* ── seat cards ── */
+.side{display:flex;flex-direction:column;gap:12px}
+.side-title{font-family:var(--font-display);font-size:.68rem;letter-spacing:.24em;text-transform:uppercase;color:var(--gold2);padding:2px 4px}
+.seat{padding:13px 14px;text-align:left}
+.seat .top{display:flex;align-items:center;gap:10px}
+.ava{position:relative;width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.25rem;
+  background:radial-gradient(circle at 38% 30%,rgba(247,231,180,.12),transparent 45%),#0B0D12;
+  border:1px solid rgba(201,162,75,.25)}
+.seat.gold .ava{border:2px solid transparent;background:
+  linear-gradient(#0B0D12,#0B0D12) padding-box,var(--gold-foil) border-box}
+.seat.gold .ava::after{content:'👑';position:absolute;top:-11px;left:50%;transform:translateX(-50%);font-size:.6rem}
+.who{min-width:0}
+.who .nm{font-weight:700;font-size:.82rem;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.who .rl{font-size:.6rem;color:#79808C;letter-spacing:.14em;text-transform:uppercase}
+.stack{margin-left:auto;text-align:right;font-family:var(--font-num);font-variant-numeric:tabular-nums}
+.stack .v{font-size:1rem;font-weight:800;color:var(--gold2);text-shadow:0 0 16px rgba(201,162,75,.35)}
+.stack .k{font-size:.56rem;color:#79808C;letter-spacing:.14em;text-transform:uppercase}
+.seat .tags{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
+.mini{font-size:.6rem;border-radius:var(--r-pill);padding:3px 9px;border:1px solid var(--line-soft);color:#AEB6C2;background:rgba(255,255,255,.02)}
+.mini.win{border-color:rgba(31,169,124,.4);color:#7FE7C0;background:rgba(31,169,124,.07)}
+.mini.lose{border-color:rgba(179,55,47,.4);color:#F0B5AF;background:rgba(179,55,47,.07)}
+.seat.me{border-color:rgba(201,162,75,.55);box-shadow:var(--shadow-deep),var(--shadow-gold)}
+.seat.tilt{border-color:var(--red);animation:tiltBreathe 1.6s infinite}
+@keyframes tiltBreathe{50%{box-shadow:0 0 34px -6px var(--red-glow)}}
+.seat.bubble{overflow:visible}
+.bub{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:#12161F;
+  border:1px solid rgba(201,162,75,.5);border-radius:12px;padding:6px 12px;font-size:.66rem;color:#E7E3D6;
+  width:max-content;max-width:190px;text-align:center;box-shadow:var(--shadow-deep);z-index:5;animation:bub .3s cubic-bezier(.2,1.4,.4,1)}
+.bub::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:6px solid transparent;border-top-color:#12161F}
+@keyframes bub{from{transform:translateX(-50%) scale(.6);opacity:0}}
+
+/* ── wheel stage ── */
+.center{display:flex;flex-direction:column;gap:12px;align-items:center}
+.stage{position:relative;width:min(88vw,430px);aspect-ratio:1;display:flex;align-items:center;justify-content:center}
+.stage::before{content:'';position:absolute;inset:-9%;border-radius:50%;
+  background:radial-gradient(circle at 50% 34%,rgba(233,208,140,.1),transparent 55%),
+  conic-gradient(from 210deg,#1A140B,#2B2113 12%,#17110A 30%,#241B0E 55%,#14100A 74%,#2B2113 90%,#1A140B);
+  box-shadow:inset 0 0 0 1px rgba(201,162,75,.35),inset 0 0 26px rgba(0,0,0,.85),0 34px 60px -18px rgba(0,0,0,.8)}
+.wheelbox{position:relative;z-index:1;width:100%;height:100%;border-radius:50%;
+  box-shadow:0 0 0 2px rgba(201,162,75,.55),0 0 0 6px rgba(12,10,6,.9),0 0 0 7px rgba(201,162,75,.28),
+  0 26px 56px -14px rgba(0,0,0,.9),0 0 42px rgba(201,162,75,.14);transition:box-shadow .4s}
+.wheelbox.spin{box-shadow:0 0 0 2px rgba(233,208,140,.75),0 0 0 6px rgba(12,10,6,.9),0 0 0 7px rgba(233,208,140,.4),0 26px 56px -14px rgba(0,0,0,.9),0 0 70px rgba(201,162,75,.3)}
+canvas#wheel{width:100%;height:100%;display:block;border-radius:50%}
+.pointer{position:absolute;top:-10px;left:50%;z-index:20;width:18px;height:30px;transform:translateX(-50%);
+  background:var(--gold-foil);clip-path:polygon(50% 100%,100% 38%,78% 0%,22% 0%,0% 38%);
+  filter:drop-shadow(0 0 10px rgba(201,162,75,.9));transform-origin:50% 0%}
+.pointer.flick{animation:flk .12s cubic-bezier(.18,.89,.32,1.28)}
+@keyframes flk{35%{transform:translateX(-50%) rotate(-14deg) scale(1.1)}70%{transform:translateX(-50%) rotate(5deg)}}
+
+.statusband{width:100%;max-width:520px;text-align:center;border-radius:var(--r-md);padding:12px 14px;min-height:50px;
+  display:flex;align-items:center;justify-content:center;gap:8px;font-weight:600;letter-spacing:.14em;
+  text-transform:uppercase;font-size:.72rem;color:#B9C0CC;background:rgba(10,12,18,.8);
+  border:1px solid var(--line-soft);transition:.3s}
+.statusband.bet{border-color:rgba(31,169,124,.55);color:#7FE7C0;box-shadow:0 0 22px -6px var(--green-glow)}
+.statusband.spin{border-color:rgba(201,162,75,.7);color:var(--gold2);box-shadow:0 0 26px -6px rgba(201,162,75,.5)}
+
+/* ── controls ── */
+.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;padding:11px 14px;width:100%;max-width:560px;
+  background:rgba(10,12,18,.6);border:1px solid var(--line-soft);border-radius:var(--r-lg)}
+.chip{position:relative;width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:.72rem;color:#FDFBF4;cursor:pointer;font-family:var(--font-num);border:none;
+  background:radial-gradient(circle at 50% 42%,rgba(255,255,255,.28),transparent 46%),radial-gradient(circle,var(--cc) 0 47%,transparent 48%),var(--ce);
+  box-shadow:inset 0 0 0 1.5px rgba(253,251,244,.22),inset 0 0 0 5px var(--ce),inset 0 0 0 6px rgba(253,251,244,.35),0 8px 16px -6px rgba(0,0,0,.85);
+  transition:transform .18s cubic-bezier(.34,1.56,.64,1),box-shadow .2s}
+.chip::before{content:'';position:absolute;inset:0;border-radius:50%;
+  background:repeating-conic-gradient(from 0deg,rgba(253,251,244,.92) 0 12deg,transparent 12deg 48deg);
+  -webkit-mask:radial-gradient(circle,transparent 0 62%,#000 63%);mask:radial-gradient(circle,transparent 0 62%,#000 63%);opacity:.9}
+.chip:hover{transform:translateY(-3px) scale(1.06)}
+.chip.sel{transform:translateY(-5px) scale(1.12);box-shadow:inset 0 0 0 1.5px rgba(253,251,244,.35),inset 0 0 0 5px var(--ce),inset 0 0 0 6.5px var(--gold2),0 12px 22px -6px rgba(0,0,0,.9),0 0 22px rgba(201,162,75,.55)}
+.c10{--ce:#1E3A6E;--cc:#2A54A0}.c50{--ce:#0F4A36;--cc:#14714F}.c100{--ce:#5A1F1B;--cc:#8E332C}.c500{--ce:#35215C;--cc:#523688}
+.quick{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;width:100%;max-width:560px}
+.quick .btn{flex:1;min-width:150px}
+
+/* ── pit board ── */
+.feed{padding:10px 12px;height:236px;overflow-y:auto;font-size:.72rem;line-height:1.5;
+  background:linear-gradient(rgba(8,10,15,.55),rgba(8,10,15,.55)),repeating-linear-gradient(0deg,rgba(255,255,255,.015) 0 22px,transparent 22px 44px)}
+.feed .row{padding:4px 6px;border-bottom:1px solid rgba(148,163,184,.06);animation:fin .3s;color:#9AA2AE;display:flex;gap:8px}
+@keyframes fin{from{opacity:0;transform:translateY(4px)}}
+.feed .t{font-family:var(--font-num);font-size:.62rem;color:#5C6470;padding-top:2px}
+.feed .g{color:#6FD9AE}.feed .r{color:#E59A94}.feed .y{color:var(--gold2)}.feed .p{color:#B79BE8}
+.feed::-webkit-scrollbar{width:6px}.feed::-webkit-scrollbar-thumb{background:rgba(201,162,75,.25);border-radius:99px}
+
+/* ── toast ── */
+.toast{position:fixed;top:16px;right:16px;z-index:99;background:rgba(10,12,18,.92);
+  border:1px solid rgba(201,162,75,.4);border-radius:14px;box-shadow:var(--shadow-deep),0 0 24px -8px rgba(201,162,75,.25);
+  padding:10px 15px;display:flex;align-items:center;gap:11px;max-width:360px;animation:sir .45s cubic-bezier(.16,1,.3,1)}
+@keyframes sir{from{transform:translateX(120%);opacity:0}}
+.toast .bd{background:var(--gold-foil);color:#171310;font-size:.56rem;font-weight:900;letter-spacing:.1em;padding:3px 8px;border-radius:6px;text-transform:uppercase}
+.toast .tx{font-size:.74rem;color:#DDD8C9;font-weight:600}
+@keyframes softPulse{50%{opacity:.45}}
+
+/* ── modal ── */
+.mbd{position:fixed;inset:0;z-index:120;background:radial-gradient(circle at 50% 40%,rgba(10,8,3,.8),rgba(0,0,0,.92));
+  display:none;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(10px)}
+.mbd.open{display:flex;animation:fade .25s}
+@keyframes fade{from{opacity:0}}
+.mcard{background:radial-gradient(circle at 50% -20%,rgba(233,208,140,.1),transparent 50%),linear-gradient(180deg,#10131B,#0B0D13);
+  border:1px solid rgba(201,162,75,.5);outline:1px solid rgba(201,162,75,.16);outline-offset:6px;border-radius:22px;
+  width:min(94vw,640px);max-height:88vh;overflow:auto;padding:24px;box-shadow:var(--shadow-deep),var(--shadow-gold);
+  animation:rise .35s cubic-bezier(.16,1,.3,1)}
+@keyframes rise{from{transform:translateY(14px) scale(.98);opacity:0}}
+.mhead{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:16px}
+.mhead h2{font-family:var(--font-display);font-size:.95rem;font-weight:700;color:var(--gold2);letter-spacing:.14em;text-transform:uppercase}
+.shop-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+@media(max-width:560px){.shop-grid{grid-template-columns:1fr}}
+.pkg{background:linear-gradient(170deg,#14110B,#0C0A07 55%,#100D09);border:1px solid rgba(201,162,75,.2);
+  border-radius:16px;padding:16px 12px;text-align:center;cursor:pointer;position:relative;overflow:hidden;transition:.25s}
+.pkg::after{content:'';position:absolute;inset:0;background:linear-gradient(115deg,transparent 42%,rgba(233,208,140,.08) 50%,transparent 58%);transform:translateX(-100%);transition:.6s}
+.pkg:hover{border-color:rgba(201,162,75,.65);transform:translateY(-3px);box-shadow:var(--shadow-deep),var(--shadow-gold)}
+.pkg:hover::after{transform:translateX(100%)}
+.pkg.hot{border-color:var(--gold2);box-shadow:0 0 0 1px rgba(233,208,140,.4),var(--shadow-gold)}
+.pkg .bn{position:absolute;top:0;right:0;background:var(--gold-foil);color:#171310;font-size:.54rem;font-weight:900;letter-spacing:.08em;padding:3px 10px;border-radius:0 14px 0 10px;text-transform:uppercase}
+.pkg .ic{font-size:1.7rem}.pkg .nm{font-weight:700;font-size:.72rem;margin-top:6px;color:#EFE9D8;letter-spacing:.1em;text-transform:uppercase}
+.pkg .qt{font-family:var(--font-num);font-size:1.2rem;font-weight:800;color:var(--gold2);margin:5px 0;text-shadow:0 0 18px rgba(201,162,75,.4)}
+.pkg .pz{font-size:.7rem;color:#8A919E;font-family:var(--font-num)}
+.pkg .bs{display:inline-block;font-size:.58rem;font-weight:900;letter-spacing:.08em;color:#0E0C08;background:var(--gold-foil);border-radius:var(--r-pill);padding:2px 9px}
+
+.note{margin-top:26px;text-align:center;font-size:.68rem;color:#5C6470;letter-spacing:.06em}
+.kbd{font-family:var(--font-num);border:1px solid var(--line-soft);border-radius:5px;padding:1px 6px;font-size:.62rem;color:#8A919E}
+
+/* winner overlay */
+.winner{position:fixed;inset:0;background:radial-gradient(circle at 50% 45%,rgba(10,8,3,.82),rgba(0,0,0,.93));
+  display:none;align-items:center;justify-content:center;z-index:130;backdrop-filter:blur(6px)}
+.winner.open{display:flex}
+.winner .card{background:radial-gradient(circle at 50% -10%,rgba(233,208,140,.14),transparent 55%),#0D0F14;
+  border:1px solid rgba(201,162,75,.65);outline:1px solid rgba(201,162,75,.22);outline-offset:5px;border-radius:22px;
+  padding:42px 48px;text-align:center;box-shadow:var(--shadow-deep),var(--shadow-gold);animation:rise .45s cubic-bezier(.16,1,.3,1)}
+.winner h2{font-family:var(--font-display);font-size:1.4rem;letter-spacing:.16em;text-transform:uppercase;margin-bottom:8px;
+  background:var(--gold-foil);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.winner .amt{font-family:var(--font-num);font-size:2.2rem;font-weight:800;color:var(--gold2);text-shadow:0 0 34px rgba(201,162,75,.5)}
+.winner p{color:#8A919E;font-size:.76rem;margin-bottom:14px}
+.winner .btns{display:flex;gap:10px;justify-content:center;margin-top:18px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <h1>◆ Soygun Çarkı ◆</h1>
+      <span class="est">Maison Noir · Salon 04</span>
+    </div>
+    <div class="hd-right">
+      <span class="tag"><span class="dot-live"></span>3.412 çevrim izleniyor</span>
+      <span class="tag">🪙 4.850 Çip</span>
+      <button class="btn sm" onclick="openShop()">Çip Alma</button>
+      <button class="btn ghost sm" id="skinBtn" onclick="toggleSkin()" title="Eski görünümle karşılaştır">Before / After</button>
+    </div>
+  </header>
+
+  <div class="econbar">
+    <span>Kasa <b>128.400</b></span>
+    <span>Progresif Jackpot <b>42.150</b></span>
+    <span>Masa <b>4 / 4</b> dolu</span>
+    <span>RTP <b>%96,8</b> (doğrulanabilir)</span>
+    <span>VIP <b>💼 Soygun Lideri</b></span>
+  </div>
+
+  <div class="table-grid">
+    <!-- SOL KOLTUKLAR -->
+    <div class="side">
+      <div class="side-title">Masa · Sol</div>
+      <div class="panel seat bubble" id="seat0">
+        <div class="bub">Bu el benim, masaya güven.</div>
+        <div class="top">
+          <div class="ava">🥷</div>
+          <div class="who"><div class="nm">VEGA</div><div class="rl">Kartel Tetikçisi</div></div>
+          <div class="stack"><div class="v">12.480</div><div class="k">çip</div></div>
+        </div>
+        <div class="tags"><span class="mini win">+2.140 son elde</span><span class="mini">x11.64'e 3 bahis</span></div>
+      </div>
+      <div class="panel seat" id="seat1">
+        <div class="top">
+          <div class="ava">🐺</div>
+          <div class="who"><div class="nm">KURT</div><div class="rl">Sakin Hesapçı</div></div>
+          <div class="stack"><div class="v">7.905</div><div class="k">çip</div></div>
+        </div>
+        <div class="tags"><span class="mini lose">−860</span><span class="mini">Sabırlı · 14 tur</span></div>
+      </div>
+    </div>
+
+    <!-- ÇARK -->
+    <div class="center">
+      <div class="stage">
+        <div class="pointer" id="pointer"></div>
+        <div class="wheelbox" id="wheelbox"><canvas id="wheel" width="860" height="860"></canvas></div>
+      </div>
+
+      <div class="statusband bet" id="band">Bahisler açık · son 14 sn — dilime dokun, çarkı çevir</div>
+
+      <div class="controls">
+        <span style="font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:#79808C">Çip</span>
+        <button class="chip c10" data-v="10">10</button>
+        <button class="chip c50 sel" data-v="50">50</button>
+        <button class="chip c100" data-v="100">100</button>
+        <button class="chip c500" data-v="500">500</button>
+        <span style="width:1px;height:34px;background:var(--line-soft)"></span>
+        <button class="btn" id="spinBtn" onclick="spin()">⚡ Çarkı Çevir</button>
+        <button class="btn ghost sm" onclick="clearBets()">Bahsi Boşalt</button>
+      </div>
+
+      <div class="quick">
+        <button class="btn ghost sm" style="border-color:rgba(168,58,49,.5);color:#E9A9A3" onclick="quick(0)">🎲 x2.33</button>
+        <button class="btn ghost sm" style="border-color:rgba(201,162,75,.5);color:var(--gold2)" onclick="quick(2)">⭐ x5.82</button>
+        <button class="btn ghost sm" style="border-color:rgba(31,169,124,.5);color:#7FE7C0" onclick="quick(6)">💎 x11.64</button>
+        <button class="btn ghost sm" style="border-color:rgba(91,62,143,.6);color:#C6B1EA" onclick="quick(4)">🥷 Soygun</button>
+      </div>
+      <p class="hint" style="font-size:.66rem;color:#5C6470;text-align:center">Dilime dokunmak = o dilime bahis. <span class="kbd">Space</span> çevirir.</p>
+    </div>
+
+    <!-- SAĞ KOLTUKLAR + PIT BOARD -->
+    <div class="side">
+      <div class="side-title">Masa · Sağ</div>
+      <div class="panel seat me" id="seat2">
+        <div class="top">
+          <div class="ava">😎</div>
+          <div class="who"><div class="nm">SEN (ahmet)</div><div class="rl">Koltuk 3 · Host değil</div></div>
+          <div class="stack"><div class="v" id="myStack">4.850</div><div class="k">çip</div></div>
+        </div>
+        <div class="tags"><span class="mini" id="myBetTag">Bahis: yok</span></div>
+      </div>
+      <div class="panel seat tilt" id="seat3">
+        <div class="top">
+          <div class="ava">🦊</div>
+          <div class="who"><div class="nm">TİLKİ</div><div class="rl">Gözü Dönmüş Hırsız · Tilt</div></div>
+          <div class="stack"><div class="v">1.240</div><div class="k">çip</div></div>
+        </div>
+        <div class="tags"><span class="mini lose">3 eldir kaybediyor</span></div>
+      </div>
+      <div class="side-title" style="margin-top:4px">Pit Board · Canlı</div>
+      <div class="panel">
+        <div class="feed" id="feed">
+          <div class="row"><span class="t">00:41</span><span class="y">T412 · x11.64 yeşilde durdu — 2 kazanan</span></div>
+          <div class="row"><span class="t">00:39</span><span class="g">VEGA +12.140 çip aldı · masa alkışladı</span></div>
+          <div class="row"><span class="t">00:37</span><span class="r">💣 BOMB — pot kasaya kaldı</span></div>
+          <div class="row"><span class="t">00:36</span><span style="color:#8FBFDD;font-style:italic">seyirci Melis: "tilki yine çaldı"</span></div>
+          <div class="row"><span class="t">00:33</span><span class="p">TİLKİ 🥷 SOYGUN dilimine 600 bastı</span></div>
+          <div class="row"><span class="t">00:30</span><span>Kurt 2.33'e 150 ekledi</span></div>
+          <div class="row"><span class="t">00:28</span><span class="g">Jackpot havuzu +214 çip büyüdü</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">TASARIM MAKETİ · Entegrasyon: <span class="kbd">src/index.css</span> (yazıldı) + <span class="kbd">gameSync.js → SEG</span> paleti (yazıldı). Reel para/çekim arayüzü bilinçli olarak YOK.</p>
+</div>
+
+<!-- SHOP MODAL MOCK -->
+<div class="mbd" id="shopModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="mcard">
+    <div class="mhead"><h2>Chip Boutique</h2><button class="close" style="background:none;border:none;color:#79808C;font-size:1.1rem;cursor:pointer" onclick="document.getElementById('shopModal').classList.remove('open')">✕</button></div>
+    <p style="font-size:.74rem;color:#8A919E;margin-bottom:14px;line-height:1.5">Çipler yalnızca oyun içi kullanım içindir, para ile satın alınamaz ve paraya çevrilemez. Sorumlu oyun: günlük limit belirleyebilirsin.</p>
+    <div class="shop-grid">
+      <div class="pkg"><span class="ic">🧢</span><div class="nm">Ayak Topu</div><div class="qt">1.000</div><span class="bs">%10 ilk tanışma</span><div class="pz">reklam dengi · 3 izleme</div></div>
+      <div class="pkg hot"><span class="bn">Popüler</span><span class="ic">💼</span><div class="nm">Kasa Paketi</div><div class="qt">5.500</div><span class="bs">%10 bonus</span><div class="pz">günlük 2 ile sınırlı</div></div>
+      <div class="pkg"><span class="ic">🎩</span><div class="nm">Salon Efendisi</div><div class="qt">12.000</div><span class="bs">%15 bonus</span><div class="pz">VIP sıra önceliği</div></div>
+      <div class="pkg"><span class="ic">👑</span><div class="nm">Haftalık Mühür</div><div class="qt">40.000</div><span class="bs">%20 bonus</span><div class="pz">seri bozulmaz kartı ×2</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- WINNER OVERLAY -->
+<div class="winner" id="winOverlay">
+  <div class="card">
+    <h2>Vurgun Tamamlandı</h2>
+    <p>x11.64 · yeşil dilim · T413</p>
+    <div class="amt">+11.640</div>
+    <div style="font-size:.66rem;color:#5C6470;letter-spacing:.14em;text-transform:uppercase">çip masana eklendi</div>
+    <div class="btns">
+      <button class="btn" onclick="document.getElementById('winOverlay').classList.remove('open')">Devam Et</button>
+      <button class="btn ghost" onclick="document.getElementById('winOverlay').classList.remove('open')">Kasaya Yaz</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── Çark motoru: tek canvas, yeni şekil dili ─────────────────────────
+   Segmentler: oyun paleti (gameSync SEG v2) ile birebir. ── */
+const SEG=[{t:'x2.33',c:'#A83A31'},{t:'BOMB',c:'#0E1116'},{t:'x5.82',c:'#C9A24B'},{t:'x2.33',c:'#A83A31'},
+{t:'SOYGUN',c:'#5B3E8F'},{t:'x2.33',c:'#A83A31'},{t:'x11.64',c:'#1FA97C'},{t:'x2.33',c:'#A83A31'},
+{t:'x5.82',c:'#C9A24B'},{t:'SOYGUN',c:'#5B3E8F'},{t:'x2.33',c:'#A83A31'},{t:'BOMB',c:'#0E1116'}];
+const N=SEG.length, A=2*Math.PI/N;
+const cv=document.getElementById('wheel'), ctx=cv.getContext('2d');
+const R=cv.width/2-8;
+let rot=0, vel=0, spinning=false, bets=Array(N).fill(0), chipV=50, myStack=4850;
+
+function drawWheel(){
+  const w=cv.width;ctx.clearRect(0,0,w,w);
+  ctx.save();ctx.translate(w/2,w/2);
+  /* dış altın halka + perlon burgu */
+  ctx.beginPath();ctx.arc(0,0,R+3,0,7);ctx.lineWidth=5;ctx.strokeStyle='rgba(201,162,75,.9)';ctx.stroke();
+  ctx.beginPath();ctx.arc(0,0,R+11,0,7);ctx.lineWidth=1.5;ctx.strokeStyle='rgba(201,162,75,.35)';ctx.stroke();
+  /* dilimler */
+  for(let i=0;i<N;i++){
+    const a0=i*A+rot, a1=a0+A;
+    ctx.beginPath();ctx.moveTo(0,0);ctx.arc(0,0,R,a0,a1);ctx.closePath();
+    const g=ctx.createRadialGradient(0,0,R*.2,0,0,R);
+    const c=SEG[i].c;
+    g.addColorStop(0,shade(c,-18));g.addColorStop(.75,c);g.addColorStop(1,shade(c,-38));
+    ctx.fillStyle=g;ctx.fill();
+    ctx.lineWidth=1.4;ctx.strokeStyle='rgba(233,208,140,.5)';ctx.stroke();
+    /* etiket */
+    ctx.save();ctx.rotate(a0+A/2);
+    ctx.textAlign='center';ctx.fillStyle='#FDFBF4';
+    ctx.font='700 26px '+getComputedStyle(document.body).getPropertyValue('--font-num');
+    ctx.shadowColor='rgba(0,0,0,.8)';ctx.shadowBlur=6;
+    ctx.fillText(SEG[i].t,R*.62,9);
+    if(SEG[i].t==='BOMB'){ctx.font='30px serif';ctx.fillText('💣',R*.62,-4)}
+    if(SEG[i].t==='SOYGUN'){ctx.font='24px serif';ctx.fillText('🥷',R*.62,-2)}
+    ctx.restore();
+    /* bahis çipleri (dilim ucunda küçük yığın) */
+    if(bets[i]>0){
+      ctx.save();ctx.rotate(a0+A/2);
+      const cnt=Math.min(4,1+Math.floor(bets[i]/100));
+      for(let s=0;s<cnt;s++){
+        ctx.beginPath();ctx.arc(R*.92-s*7,0,7.5,0,7);
+        ctx.fillStyle=['#2A54A0','#14714F','#8E332C','#523688'][Math.min(3,Math.floor(chipV/50))];
+        ctx.fill();ctx.lineWidth=1.6;ctx.strokeStyle='rgba(253,251,244,.85)';ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+  /* iç disk + jant vidaları */
+  ctx.beginPath();ctx.arc(0,0,R*.40,0,7);ctx.fillStyle='#07060B';ctx.fill();
+  ctx.lineWidth=2;ctx.strokeStyle='rgba(201,162,75,.75)';ctx.stroke();
+  for(let k=0;k<12;k++){ctx.save();ctx.rotate(k*Math.PI/6);
+    ctx.beginPath();ctx.arc(R*.475,0,4,0,7);ctx.fillStyle='#E9D08C';ctx.fill();ctx.restore();}
+  /* jant çivileri */
+  for(let k=0;k<24;k++){ctx.save();ctx.rotate(k*Math.PI/12);
+    ctx.beginPath();ctx.arc(R*.995,0,5.4,0,7);
+    ctx.fillStyle=(spinning&&k%2===((Date.now()/90|0)%2))?'#FFF3C4':'rgba(247,231,180,.45)';
+    if(spinning&&k%2===((Date.now()/90|0)%2)){ctx.shadowColor='#F7E7B4';ctx.shadowBlur=14}
+    ctx.fill();ctx.restore();}
+  ctx.restore();
+}
+function shade(hex,p){const n=parseInt(hex.slice(1),16);let r=n>>16,g=n>>8&255,b=n&255;
+  r=Math.max(0,Math.min(255,r+p));g=Math.max(0,Math.min(255,g+p));b=Math.max(0,Math.min(255,b+p));
+  return 'rgb('+r+','+g+','+b+')';}
+
+/* fizik: sürtünmeli de-ccelerasyon + pointer tiki */
+let lastSeg=-1, tickT=0;
+function loop(){
+  if(spinning){
+    rot+=vel; vel*=0.9935;
+    const seg=indicated();
+    if(seg!==lastSeg){lastSeg=seg;flick();tick();}
+    if(vel<0.0012){spinning=false;vel=0;land();}
+    drawWheel();requestAnimationFrame(loop);return;
+  }
+  drawWheel();requestAnimationFrame(loop);
+}
+function indicated(){
+  const a=(Math.PI*1.5-rot)% (2*Math.PI);
+  return (N-Math.floor(((a<0?a+2*Math.PI:a)+A/2)/A)%N)%N;
+}
+const pointer=document.getElementById('pointer');
+function flick(){pointer.classList.remove('flick');void pointer.offsetWidth;pointer.classList.add('flick')}
+function tick(){
+  const t=performance.now();if(t-tickT<55)return;tickT=t;
+  try{const ac=window._ac||(window._ac=new (AudioContext)());
+  const o=ac.createOscillator(),g=ac.createGain();o.type='square';o.frequency.value=1300+Math.random()*300;
+  g.gain.setValueAtTime(.04,ac.currentTime);g.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+.03);
+  o.connect(g).connect(ac.destination);o.start();o.stop(ac.currentTime+.035)}catch(e){}
+}
+function spin(){
+  if(spinning)return;
+  spinning=true;vel=0.26+Math.random()*0.06;
+  document.getElementById('wheelbox').classList.add('spin');
+  band('spin','Çark dönüyor · nefesinizi tutun');
+}
+function land(){
+  document.getElementById('wheelbox').classList.remove('spin');
+  const s=indicated();
+  if(bets[s]>0){
+    const win=Math.round(bets[s]*(s===0||s===3||s===5||s===7||s===10?2.33:(s===2||s===8?5.82:11.64)));
+    myStack+=win-bets[s];
+    feed('g','T413 · x'+(SEG[s].t.slice(1))+' → SEN +'+win.toLocaleString('tr-TR')+' çip');
+    document.getElementById('winOverlay').classList.add('open');
+  }else if(SEG[s].t==='BOMB'){feed('r','💣 T413 · BOMB — pot kasaya kaldı');band('bet','Bahisler açık · dilime dokun')}
+  else{feed('y','T413 · sonuç '+SEG[s].t+' — bu elde sen yoksun');band('bet','Bahisler açık · dilime dokun')}
+  bets=Array(N).fill(0);updateBetTag();document.getElementById('myStack').textContent=myStack.toLocaleString('tr-TR');
+}
+function band(cls,txt){const b=document.getElementById('band');b.className='statusband '+cls;b.textContent=txt}
+function feed(cls,msg){const f=document.getElementById('feed');
+  const d=document.createElement('div');d.className='row';
+  d.innerHTML='<span class="t">'+new Date().toTimeString().slice(0,5)+'</span><span class="'+cls+'">'+msg+'</span>';
+  f.prepend(d);while(f.children.length>30)f.lastChild.remove();}
+function quick(i){bet(i)}
+function bet(i){
+  if(spinning)return;
+  bets[i]+=chipV;myStack=Math.max(0,myStack);
+  feed('p','SEN dilim '+i+' → +'+chipV+' çip');
+  updateBetTag();
+}
+function updateBetTag(){
+  const tot=bets.reduce((a,b)=>a+b,0);
+  document.getElementById('myBetTag').textContent='Bahis: '+(tot||'yok')+(tot?' çip':'');
+}
+function clearBets(){bets=Array(N).fill(0);updateBetTag();}
+/* dilime tıkla */
+cv.addEventListener('click',e=>{
+  const r=cv.getBoundingClientRect();
+  const x=e.clientX-r.left-r.width/2, y=e.clientY-r.top-r.height/2;
+  const dist=Math.hypot(x,y)/(r.width/2);
+  if(dist<.42||dist>.98)return;
+  let ang=Math.atan2(y,x)-rot;ang=((ang%(2*Math.PI))+2*Math.PI)%(2*Math.PI);
+  bet(Math.floor(ang/A)%N);
+});
+/* çip seçimi */
+document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{
+  document.querySelectorAll('.chip').forEach(x=>x.classList.remove('sel'));
+  c.classList.add('sel');chipV=+c.dataset.v;updateBetTag();
+}));
+window.addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();spin()}});
+function openShop(){document.getElementById('shopModal').classList.add('open')}
+function toggleSkin(){document.body.classList.toggle('before')}
+loop();
+/* maket canlılık: rastgele salon olayları + balina bandı */
+setInterval(()=>{if(!spinning&&Math.random()<.5){
+  const msgs=[['g','Vega, VIP salonundan masaya çip taşıdı · 6.000'],['y','Jackpot havuzu 42.150 → 42.640'],
+  ['p','TİLKİ ile KURT 2 elde 1.400 çip el değiştirdi'],['r','Tilki tiltte — masaya bakma, bahse gir']];
+  const m=msgs[Math.random()*msgs.length|0];feed(m[0],m[1]);}},9000);
+</script>
+</body>
+</html>

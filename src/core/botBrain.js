@@ -24,7 +24,7 @@ export const BOT_PERSONALITIES = {
     snipeUrgency: 0.35,
     taunts: {
       win: [
-        'Paranın kokusunu aldım mı affetmem amına koyayım!',
+        'Paranın kokusunu aldım mı affetmem, bu el benim!',
         'Masa benim beyler, hadi naş naş!',
         'Cüzdan doldu taştı, sıradaki kurban kim?',
         'Kartel masaya oturdu, geçmiş olsun!',
@@ -38,11 +38,11 @@ export const BOT_PERSONALITIES = {
         'Şansınız yaver gitti, az sonra görüşeceğiz.'
       ],
       tilt: [
-        'Siktir et tedbiri, her şeyi masaya vuruyorum!',
-        'Son çipe kadar basmazsam orospu çocuğuyum!',
+        'Tedbiri bir köşeye bırak, her şeyi masaya vuruyorum!',
+        'Son çipe kadar masadayım, hesabı görmeden kalkmam!',
         'Tüm kasayı x11\'e kilitledim, nefesinizi tutun!',
         'Geri vites yok lan, ya batarız ya masayı satın alırız!',
-        'Bana acımak yoksa kimseye yok amına koyayım!'
+        'Bana acımak yoksa kimseye de yok, hesabı kesiyorum!'
       ],
       predatory: [
         'Bakiyen eridi koçum, kan kokusu alıyorum!',
@@ -61,7 +61,7 @@ export const BOT_PERSONALITIES = {
         'Kasadaki çipleri benim hesaba aktardım, teşekkürler.'
       ],
       bomb: [
-        'Bombayı koyanın ta amına koyayım!',
+        'Bombayı koyan pişman olacak, masa daralacak!',
         'Pimi kim çekti lan?! Tüm çip kül oldu!',
         'Patladık amk, ama küllerimizden doğarız.'
       ],
@@ -147,7 +147,7 @@ export const BOT_PERSONALITIES = {
       ],
       tilt: [
         'Ulan hepinizin çipini soymadan masadan kalkarsam namerdim!',
-        'Her koltuğa soygun atıyorum, kaçışınız yok amına koyayım!',
+        'Her koltuğa soygun atıyorum, kaçışınız yok bu gece!',
         'Gözüm döndü lan, alayınızı temizleyeceğim!'
       ],
       predatory: [
@@ -165,7 +165,7 @@ export const BOT_PERSONALITIES = {
         'Koltuklardaki çipleri tırtıkladım, afiyet olsun bana!'
       ],
       bomb: [
-        'Tuzak kurmuşlar amına koyayım, patladık!',
+        'Tuzak kurmuşlar, bu turda patladık!',
         'Lan bombayı kim sakladı oraya!',
         'Gitti güzelim çipler, intikamım acı olacak!'
       ],

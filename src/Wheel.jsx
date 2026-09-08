@@ -284,7 +284,7 @@ export default function Wheel({ seat = -1, seats = {}, meName, uid, bal, onOpenS
         VisualFX.triggerChromaticAberration(700)
         setLottieEvent({ type: 'bomb', text: 'BOMBA PATLADI! 💥' })
         dynamicAudio.setPhase('idle')
-        speakStreetVoice('Bombayı koyanın ta amına koyayım, masa patladı!', 'kurt')
+        speakStreetVoice('Havada barut kokusu var, masa bu turu unutmaz!', 'kurt')
         if (spectatorEngineRef.current) spectatorEngineRef.current.reactToGameEvent('bomb_hit')
       } else if (landedSeg.t === 'S') {
         playHeistSiren()
@@ -313,7 +313,7 @@ export default function Wheel({ seat = -1, seats = {}, meName, uid, bal, onOpenS
           const winTot = mySeatBet * landedSeg.t
           VisualFX.triggerVictorySplash('DEVASA KAZANÇ', winTot, `x${landedSeg.t} ÇARPAN İLE SOYGUN TAMAMLANDI!`)
           setLottieEvent({ type: 'win', text: `x${landedSeg.t} DEVASA VURGUN!`, amount: winTot })
-          speakStreetVoice('Parayı kokladım mı affetmem amına koyayım, hepsi benim!', 'vega')
+          speakStreetVoice('Paranın kokusunu aldım — bu masa benim, hepsi benim!', 'vega')
         } else {
           setLottieEvent({ type: 'win', text: `x${landedSeg.t} JACKPOT PATLADI!` })
           speakStreetVoice(`Masa alev aldı, x${landedSeg.t} patladı!`, 'announcer')
@@ -1250,7 +1250,7 @@ export default function Wheel({ seat = -1, seats = {}, meName, uid, bal, onOpenS
           {[
             { l: '💰 Parayı Kokladım!', m: 'Paranın kokusunu aldım, bu el benim!' },
             { l: '🥷 Hepinizi Soydum!', m: 'Ceplerinizi boşaltın lan, masa temizlendi!' },
-            { l: '🔥 Geri Vites Yok!', m: 'Siktir et tedbiri, her şeyi vuruyorum!' },
+            { l: '🔥 Geri Vites Yok!', m: 'Tedbiri bir köşeye bırak, her şeyi vuruyorum!' },
             { l: '🎯 Pusuya Düşmeyin!', m: 'Göz açıp kapayana kadar pot cebe indi!' },
             { l: '👑 Masa Benim!', m: 'Dağılın beyler, kral masada!' },
           ].map((item, idx) => (
